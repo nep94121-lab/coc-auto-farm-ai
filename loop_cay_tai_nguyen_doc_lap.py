@@ -103,6 +103,10 @@ def ensure_at_home():
         if img is None:
             time.sleep(1.0)
             continue
+        if cvg.is_builder_base(img):
+            cet.log("[BUILDER-BASE-GUARD] Phát hiện đang lạc sang Làng Thợ! Khởi động lại game để về đúng Làng chính...")
+            umt.restart_game_to_home(reason="detected_builder_base", screenshot=img)
+            continue
         if cvg.is_battle_button_visible(img):
             return img
         if cvg.is_reload_game_dialog(img):

@@ -216,9 +216,24 @@ def is_upgrade_drawer_open(img):
     return int(red_px) > 350
 
 
+def is_builder_base(img):
+    """Nhận diện Làng Thợ (Builder Base) để không nhận nhầm sang Làng chính."""
+    if img is None or img.shape[0] < 900 or img.shape[1] < 2000:
+        return False
+    # Ở Làng Thợ: không có Dầu đen nên nút '+' Gem màu xanh nằm tại y=165..225
+    gem_plus = img[165:225, 1845:1925]
+    green_px = int(np.sum((gem_plus[:, :, 1] > 165) & (gem_plus[:, :, 2] < 140) & (gem_plus[:, :, 0] < 90)))
+    # Đồng thời góc trái phía trên nút Battle có hộp sao trắng (0/9...)
+    star_box = img[800:865, 25:195]
+    white_px = int(np.sum((star_box[:, :, 0] > 210) & (star_box[:, :, 1] > 210) & (star_box[:, :, 2] > 210)))
+    return green_px > 350 and white_px > 500
+
+
 def is_battle_button_visible(img):
-    """Kiểm tra nút Battle màu vàng cam góc trái dưới ở Làng chính."""
+    """Kiểm tra nút Battle màu vàng cam góc trái dưới ở Làng chính (chặn Làng Thợ)."""
     if img is None:
+        return False
+    if is_builder_base(img):
         return False
     crop = img[885:1055, 25:195]
     yellow_px = np.sum((crop[:, :, 2] > 210) & (crop[:, :, 1] > 140) & (crop[:, :, 0] < 80))

@@ -136,6 +136,22 @@ def test_wakeup_duration_math():
         assert os.path.exists(out)
 
 
+def test_builder_base_guard_blocks_false_home_village():
+    # Làng Thợ giả lập: nút Battle vàng góc trái dưới + hộp sao trắng phía trên + nút '+' Gem xanh ở y=165..225
+    bb_img = np.zeros((1080, 2220, 3), dtype=np.uint8)
+    bb_img[900:1030, 40:180] = (20, 180, 240)
+    bb_img[810:855, 45:165] = (240, 240, 240)
+    bb_img[175:215, 1860:1905] = (40, 210, 80)
+    assert cvg.is_builder_base(bb_img) is True
+    assert cvg.is_battle_button_visible(bb_img) is False
+
+    # Làng chính giả lập: nút Battle vàng góc trái dưới, KHÔNG có '+' Gem ở y=165..225 hay hộp sao trắng
+    home_img = np.zeros((1080, 2220, 3), dtype=np.uint8)
+    home_img[900:1030, 40:180] = (20, 180, 240)
+    assert cvg.is_builder_base(home_img) is False
+    assert cvg.is_battle_button_visible(home_img) is True
+
+
 def test_repo_portability_syntax_and_lf_encoding():
     assert cet._resolve_adb_path()
     for root, dirs, files in os.walk(REPO_ROOT):

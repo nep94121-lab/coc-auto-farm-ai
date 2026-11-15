@@ -147,14 +147,14 @@ def close_upgrade_panel_to_home(verify=True, sleep_sec=0.8, zoom_out=True):
         if not verify:
             if zoom_out:
                 cet.zoom_out_pinch(repeats=1)
-                cet.tap(500, 620, sleep_sec=0.25)
+                cet.tap(1800, 420, sleep_sec=0.25)
             return {"ok": True, "screen": "unverified", "method": lbl, "zoom_out": zoom_out}
         img = cet.capture_screen()
         if img is not None and cvg.is_battle_button_visible(img):
             zoom_res = None
             if zoom_out:
                 zoom_res = cet.zoom_out_pinch(repeats=1)
-                cet.tap(500, 620, sleep_sec=0.25)
+                cet.tap(1800, 420, sleep_sec=0.25)
             return {"ok": True, "screen": "home", "attempts": idx, "closed_by": pt, "zoom_out": zoom_res}
     rec = restart_game_to_home(reason="close_panel_failed_to_show_battle", screenshot=cet.capture_screen())
     return rec
