@@ -144,26 +144,30 @@ def crop_home_resource_bar(img):
 
 
 def _read_home_bar_number(crop):
-    """Đọc số trắng trên thanh tài nguyên Làng chính, ưu tiên tách chữ trắng tinh và chống đứt nét chữ số đầu."""
+    """Đọc số trắng trên thanh tài nguyên Làng chính, ưu tiên tách chữ trắng tinh và chống đứt nét / mờ một phần."""
     if crop is None or crop.size == 0:
         return 0
     b, g, r = crop[:, :, 0], crop[:, :, 1], crop[:, :, 2]
+    gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
+    max_c = np.maximum(np.maximum(r, g), b).astype(np.int16)
+    min_c = np.minimum(np.minimum(r, g), b).astype(np.int16)
     kwargs = dict(min_h=18, max_h=27, min_w=5, max_w=26, min_area=65, max_y_jitter=4, max_x_gap=22)
     best_res = 0
-    for thresh in (210, 185):
+    for thresh in (210, 185, 150):
         mask = ((r > thresh) & (g > thresh) & (b > thresh)).astype(np.uint8) * 255
         res = _extract_digits_from_mask(mask, **kwargs)
         if res > best_res:
             best_res = res
-        if res >= 10_000_000:
-            return res
+        mask_neu = ((gray > thresh) & ((max_c - min_c) < 28)).astype(np.uint8) * 255
+        res_neu = _extract_digits_from_mask(mask_neu, **kwargs)
+        if res_neu > best_res:
+            best_res = res_neu
+        if best_res >= 10_000_000:
+            return best_res
     if best_res > 0:
         return best_res
 
-    # Fallback khi màn hình bị làm tối do popup: chữ xám trung tính (R~G~B)
-    gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
-    max_c = np.maximum(np.maximum(r, g), b).astype(np.int16)
-    min_c = np.minimum(np.minimum(r, g), b).astype(np.int16)
+    # Fallback khi màn hình bị làm tối sâu do popup
     neutral = ((gray > 105) & ((max_c - min_c) < 25)).astype(np.uint8) * 255
     res = _extract_digits_from_mask(neutral, **kwargs)
     if res > 0:

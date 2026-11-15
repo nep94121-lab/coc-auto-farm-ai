@@ -152,6 +152,18 @@ def test_builder_base_guard_blocks_false_home_village():
     assert cvg.is_battle_button_visible(home_img) is True
 
 
+def test_partially_dimmed_right_digits_ocr():
+    """Hồi quy trường hợp toast/bóng mờ làm tối nửa phải thanh Elixir/DE (21536869 -> không bị rớt thành 215368)."""
+    canvas = np.zeros((1080, 2220, 3), dtype=np.uint8)
+    _render_number_on_home_bar(canvas, "21536869", y_top=119, x_right=2123, shifted=False)
+    _render_number_on_home_bar(canvas, "293628", y_top=185, x_right=2123, shifted=False)
+    # Làm tối nửa phải từ x=2072 về sau giống bóng overlay (giảm độ sáng còn ~65%)
+    canvas[:, 2072:2150] = (canvas[:, 2072:2150].astype(np.float32) * 0.65).astype(np.uint8)
+    _, elixir, de = cvg.read_all_home_resources(canvas)
+    assert elixir == 21536869, f"Expected 21536869, got {elixir}"
+    assert de == 293628, f"Expected 293628, got {de}"
+
+
 def test_repo_portability_syntax_and_lf_encoding():
     assert cet._resolve_adb_path()
     for root, dirs, files in os.walk(REPO_ROOT):
