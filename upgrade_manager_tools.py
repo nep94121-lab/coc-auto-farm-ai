@@ -491,6 +491,26 @@ def compute_safe_wakeup(durations, buffer_minutes=3, save_path=None):
     return plan
 
 
+def return_from_builder_base_to_home(img=None):
+    """Bấm thuyền ở Làng Thợ (góc trên phải bờ biển) để quay về Làng chính."""
+    boat_candidates = [(1665, 165), (1740, 195), (1580, 175)]
+    for attempt in range(2):
+        if attempt > 0:
+            cet.close_all_modals()
+            cet.zoom_out_pinch(repeats=1)
+            # Kéo tay từ trên-phải xuống dưới-trái để lộ góc bờ biển trên-phải của Làng Thợ
+            cet.swipe(1650, 260, 650, 760, 350)
+            time.sleep(0.6)
+        for bx, by in boat_candidates:
+            cet.tap(bx, by, sleep_sec=2.3)
+            cur = cet.capture_screen()
+            if cur is not None and cvg.is_battle_button_visible(cur):
+                return True
+            if cur is not None and not cvg.is_builder_base(cur):
+                cet.close_all_modals()
+    return False
+
+
 def restart_game_to_home(reason="out_of_scope", screenshot=None, timeout_sec=55):
     """
     Khi giao diện bị lệch khỏi phạm vi điều khiển: ghi log + lưu ảnh báo thức AI,
@@ -521,6 +541,13 @@ def restart_game_to_home(reason="out_of_scope", screenshot=None, timeout_sec=55)
     while time.time() < deadline:
         img = cet.capture_screen()
         if img is not None:
+            if cvg.is_builder_base(img):
+                cet.log("[ALERT-RECOVERY] Game mở ở Làng Thợ -> Bấm thuyền quay về Làng chính...")
+                if return_from_builder_base_to_home(img):
+                    cet.log("[ALERT-RECOVERY] Đã đi thuyền từ Làng Thợ về đúng Làng chính.")
+                    zoom_res = cet.zoom_out_pinch(repeats=1)
+                    return {"ok": True, "screen": "home", "alert": alert_payload, "zoom_out": zoom_res}
+                continue
             if cvg.is_battle_button_visible(img):
                 cet.log("[ALERT-RECOVERY] Đã khởi động lại và về đúng Làng chính an toàn.")
                 zoom_res = cet.zoom_out_pinch(repeats=1)

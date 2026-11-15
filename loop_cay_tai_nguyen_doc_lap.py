@@ -104,7 +104,10 @@ def ensure_at_home():
             time.sleep(1.0)
             continue
         if cvg.is_builder_base(img):
-            cet.log("[BUILDER-BASE-GUARD] Phát hiện đang lạc sang Làng Thợ! Khởi động lại game để về đúng Làng chính...")
+            cet.log("[BUILDER-BASE-GUARD] Phát hiện đang lạc sang Làng Thợ! Bấm thuyền quay về Làng chính...")
+            if umt.return_from_builder_base_to_home(img):
+                continue
+            cet.log("[BUILDER-BASE-GUARD] Không thấy thuyền ngay -> Khởi động lại game để về đúng Làng chính...")
             umt.restart_game_to_home(reason="detected_builder_base", screenshot=img)
             continue
         if cvg.is_battle_button_visible(img):
