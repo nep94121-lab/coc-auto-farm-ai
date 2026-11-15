@@ -1,0 +1,29 @@
+# Python cache & tests
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.venv/
+venv/
+
+# Runtime logs, screenshots & alerts
+runtime/
+*.png
+*.jpg
+*.jpeg
+*.log
+
+# Preserve visual assets tracked in git
+!assets/
+!assets/**/*.png
+!assets/**/*.jpg
+!assets/**/*.npz
+!assets/**/*.sh
+!assets/**/*.json
+!assets/**/*.bin
+
+# OS / IDE metadata
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

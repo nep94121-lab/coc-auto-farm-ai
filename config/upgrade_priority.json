@@ -1,0 +1,36 @@
+{
+  "builder_focus": {
+    "target_builders": 6,
+    "focus_mode": "focus_until_max",
+    "priority_targets": [
+      {
+        "name": "Archer Tower",
+        "max_level": 21,
+        "notes": "Uu tien toan bo tho xay tap trung nang Archer Tower den khi dat Max (Level 21)"
+      },
+      {
+        "name": "Cannon",
+        "max_level": 21,
+        "notes": "Sau khi Archer Tower dat Max hoac xen ke khi con tho xay ranh, nang Cannon den Level 21"
+      }
+    ],
+    "fallback_targets": [
+      "Grand Warden",
+      "Barbarian King",
+      "Archer Queen",
+      "Royal Champion",
+      "Minion Prince",
+      "Dragon Duke"
+    ],
+    "max_scrolls_to_search": 5
+  },
+  "research_priority": {
+    "notes": "AI doc full_3_lab.png va full_3b_lab_scrolled.png de chon muc nghien cuu phu hop voi kho Elixir/Dark Elixir"
+  },
+  "resource_stop_thresholds": {
+    "gold": 23000000,
+    "elixir": 23000000,
+    "dark_elixir": 300000,
+    "wall_return_to_farm": 3000000
+  }
+}
