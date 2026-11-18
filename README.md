@@ -6,24 +6,28 @@ He thong tu dong cay tai nguyen, soi nha Vision/OCR, danh theo combo ghi truc ti
 
 ---
 
-## 1. Cai Dat Tu Dau (Tren May Moi)
+## 1. Cai Dat Tu Dau (Tren May Win 10 Moi + Thiet Bi Moi)
 
-### Buoc 1: Cai dat Python, ADB & scrcpy
-1. Cai thu vien Python:
+Chay script kiem tra & cai dat tu dong 1 phat tren Win 10:
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\Setup_Win10.ps1
+```
+
+### Buoc 1: Phan mem can cai tren Windows 10 moi
+1. **Git for Windows** (`winget install Git.Git`) + **Python 3.10+** (`winget install Python.Python.3.12`, tick *Add Python to PATH*), roi chay:
    ```bash
    pip install -r requirements.txt
    ```
-2. Cai **Android Platform Tools** (`adb.exe`) vao PATH hoac `%LOCALAPPDATA%\Android\Sdk\platform-tools\adb.exe` (hoac set `$env:ADB_PATH`).
-3. Cai **scrcpy** (`https://github.com/Genymobile/scrcpy/releases`) vao `%LOCALAPPDATA%\scrcpy\scrcpy.exe` (hoac them vao PATH / set `$env:SCRCPY_PATH`).
+2. **USB Driver** (neu `adb devices` khong nhan dien thoai tren Win 10 moi: cai **Samsung Android USB Driver** hoac Universal ADB Driver).
+3. **Android Platform Tools (`adb.exe`)**: `winget install Google.PlatformTools` (hoac dat tai `%LOCALAPPDATA%\Android\Sdk\platform-tools\adb.exe`).
+4. **scrcpy (`scrcpy.exe`)**: `winget install Genymobile.scrcpy` (hoac giai nen vao `%LOCALAPPDATA%\scrcpy\`).
+5. **Chong Win 10 tat USB**: `scripts\Setup_Win10.ps1` tu dong tat *USB Selective Suspend* va tat Sleep khi cam dien (`powercfg`).
 
-### Buoc 2: Ket noi dien thoai Android qua USB Debugging
+### Buoc 2: Thiet lap tren dien thoai Android moi
 1. Bat **Settings -> About phone -> Software information -> bam Build number 7 lan** de mo **Developer options**.
 2. Bat **USB debugging**, cam cap USB va chap nhan *Always allow from this computer*.
-3. Kiem tra ket noi:
-   ```powershell
-   adb devices
-   ```
-   Phai hien `<serial>    device`. (Thiet bi da root `su` ho tro ghi/phat `/dev/input/event0` toc do cao).
+3. Kiem tra `adb devices` phai hien `<serial>    device` (thiet bi da root `su` ho tro ghi/phat `/dev/input/event0`).
+4. **Luu y khi doi may khac Galaxy S9 (`2220x1080`) hoac doi tai khoan CoC moi:** Xem chi tiet cach kiem tra `wm size`, `getevent -p`, ghi lai combo (`scripts/record_combo.py`), va reset luoi tuong (`wall_upgrade_vision_manager.py` / `runtime/known_level18_walls.json`) trong [AGENTS.md](AGENTS.md).
 
 ### Buoc 3: Tao Icon Desktop hien man hinh dien thoai (1 click)
 ```powershell
@@ -52,6 +56,7 @@ coc-auto-farm-ai/
 │   ├── zoom_pinch_fast/             # Tap lenh da cham thu nho camera (26 frames)
 │   └── swipe_list_fast/           # Tap lenh vuot danh sach Buildings/Lab (26 frames)
 ├── scripts/
+│   ├── Setup_Win10.ps1              # Kiem tra Python/ADB/scrcpy, tat ngat USB Win 10 & tao Icon Desktop
 │   ├── Mo_Man_Hinh_CoC.bat          # Mo scrcpy co tu dong reconnect chong out man hinh
 │   ├── Tao_Icon_Desktop.ps1         # Script tao icon ngoai Desktop
 │   ├── Tao_Icon_Desktop.bat         # Wrapper 1-click cho Tao_Icon_Desktop.ps1

@@ -22,7 +22,8 @@ coc-auto-farm-ai/
 │   ├── zoom_pinch_fast/             # Macro da cham thu nho camera (26 frames /dev/input/event0)
 │   └── swipe_list_fast/             # Macro vuot danh sach cong trinh/Lab
 ├── scripts/
-│   ├── Mo_Man_Hinh_CoC.bat          # Mo cua so scrcpy hien man hinh dien thoai (TU DONG KET NOI LAI neu out)
+│   ├── Setup_Win10.ps1              # Script kiem tra Python/ADB/scrcpy, chong ngat USB & cai Icon Desktop
+│   ├── Mo_Man_Hinh_CoC.bat          # Mo cua so scrcpy co tu dong reconnect neu out
 │   ├── Tao_Icon_Desktop.ps1         # Tao shortcut Icon ngoai Desktop tro vao Mo_Man_Hinh_CoC.bat
 │   ├── Tao_Icon_Desktop.bat         # File bam 1 click de chay Tao_Icon_Desktop.ps1
 │   └── record_combo.py              # Tool ghi/phat lai thao tac cham phan cung (doc thang /dev/input/event0)
@@ -44,17 +45,44 @@ coc-auto-farm-ai/
 
 ## 2. Quy Trinh Set Up Tu Dau Cho May Moi / AI Moi
 
-### Buoc 1: Cai dat cong cu he thong
-1. **Python 3.10+**: `pip install -r requirements.txt`
-2. **Android Platform Tools (`adb.exe`)**:
-   - Cai vao `%LOCALAPPDATA%\Android\Sdk\platform-tools\adb.exe` hoac them vao `PATH`, hoac set `$env:ADB_PATH`.
-3. **scrcpy (Hien man hinh dien thoai len PC)**:
-   - Tai ban Windows tai `https://github.com/Genymobile/scrcpy/releases` va giai nen vao `%LOCALAPPDATA%\scrcpy\scrcpy.exe` (hoac them vao `PATH` / set `$env:SCRCPY_PATH`).
-4. **Dien thoai Android (Da chuan hoa Galaxy S9 do phan giai `2220x1080`, co Root `su`)**:
-   - Bat **Developer Options -> USB Debugging** va cam cap USB, chon *Always allow from this computer*.
-   - Kiem tra bang `adb devices` phai hien trang thai `device`.
+### Buoc 1: Cai dat cong cu tren may tinh Windows 10 moi
+Co the chay nhanh script kiem tra & cai dat tu dong:
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\Setup_Win10.ps1
+```
+Danh sach phan mem bat buoc phai co tren may Win 10 moi:
+1. **Git for Windows** (`winget install Git.Git`): de clone/pull repo.
+2. **Python 3.10+** (`winget install Python.Python.3.12`, nho tick *Add Python to PATH*), sau do chay:
+   ```bash
+   pip install -r requirements.txt
+   ```
+   (Gom `opencv-python`, `numpy`, `pytest`, `pytest-timeout`).
+3. **USB Driver cua hang dien thoai**: Tren Win 10 moi thuong chua co driver ADB cho Samsung/Android -> Neu `adb devices` khong hien may, cai **Samsung Android USB Driver** (hoac Universal ADB Driver).
+4. **Android Platform Tools (`adb.exe`)** (`winget install Google.PlatformTools`):
+   - Dat tai `%LOCALAPPDATA%\Android\Sdk\platform-tools\adb.exe` hoac them vao `PATH` (hoac dat `$env:ADB_PATH`).
+5. **scrcpy (`scrcpy.exe`)** (`winget install Genymobile.scrcpy`):
+   - Dat tai `%LOCALAPPDATA%\scrcpy\scrcpy.exe` (hoac them vao `PATH` / `$env:SCRCPY_PATH`) de hien man hinh dien thoai len Desktop.
+6. **Chong Win 10 tu tat cong USB (USB Selective Suspend & Sleep)**:
+   - `scripts\Setup_Win10.ps1` da tu tat `USB selective suspend` va tat `standby-timeout-ac` qua `powercfg` de Win 10 khong ngat nguon cap USB giua chung lam out `scrcpy`/ADB.
 
-### Buoc 2: Tao Icon Desktop hien man hinh dien thoai (1 click)
+### Buoc 2: Thiet lap tren thiet bi Android moi (QUAN TRONG)
+1. Bat **Settings -> About phone -> Software information -> bam Build number 7 lan** de mo **Developer options**.
+2. Bat **USB debugging** (va *Stay awake* neu co), cam cap USB va bam **Always allow from this computer**.
+3. Kiem tra ket noi: `adb devices` phai ra `<serial>    device`. Neu co nhieu may, dat `$env:ANDROID_SERIAL="<serial>"`.
+4. **Quyen Root (`su`) & Touch Node:**
+   - He thong dung `/dev/input/event0` (tap nhanh 0.045s + pinch zoom + swipe nhanh). Can may da Root (`su`, cap quyen shell trong Magisk/SuperSU).
+   - Kiem tra tren thiet bi moi:
+     ```bash
+     adb shell wm size
+     adb shell getevent -p /dev/input/event0
+     adb shell dumpsys input | grep SurfaceOrientation
+     ```
+5. **LUU Y NEU DUNG DIEN THOAI KHAC GALAXY S9 (2220x1080) HOAC TAI KHOAN COC MOI:**
+   - **Khac do phan giai (`wm size` != `2220x1080`) hoac `ABS_MT_POSITION_X/Y` `max` != `4095`:** AI moi KHONG duoc dung mu toa do cu. Phai kiem tra lai `coc_executor_tools.py` (cong thuc quy doi `rx, ry`), vung cat OCR trong `coc_vision_grid.py` (`BOX_RESOURCE_BAR`, `read_enemy_loot`), nut trong `phan1_vao_tran_soi_nha.py`, va **ghi lai combo moi** bang `python scripts/record_combo.py --record`.
+   - **Khac lang / khac bo cuc tuong (tai khoan CoC moi):** Xoa file `runtime/known_level18_walls.json` (va sua `INITIAL_VERIFIED_L18` trong `wall_upgrade_vision_manager.py`), do lai `WALL_GRID_ORIGIN`, `DELTA_ROW`, `DELTA_COL`, `GRID_NUM_ROWS`, `GRID_NUM_COLS`, va `MAX_WALL_LEVEL` trong `wall_upgrade_vision_manager.py`.
+   - **Pin & Chặn app nền trên máy mới:** Neu khong phai Galaxy S9 bi loi cam bien nhiet `-200`, khong can sua `/sys/class/power_supply/battery/*` (code root sysfs chi chay neu ton tai file). Bat buoc tat toi uu pin cho Clash of Clans (`dumpsys deviceidle whitelist +com.supercell.clashofclans`) va tat tinh nang *Put unused apps to sleep* trong cai dat pin cua hang.
+
+### Buoc 3: Tao Icon Desktop hien man hinh dien thoai (1 click)
 Chay 1 lan duy nhat:
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\Tao_Icon_Desktop.ps1
@@ -63,7 +91,7 @@ Hoac nhay dup vao `scripts\Tao_Icon_Desktop.bat`.
 - Ngoai Desktop se xuat hien icon **`Man Hinh Dien Thoai CoC`**.
 - Bam vao icon nay de mo cua so dien thoai. Script `scripts\Mo_Man_Hinh_CoC.bat` da co **vong lap tu dong ket noi lai** (`adb reconnect` -> mo lai `scrcpy`) neu cap USB hay ADB bi nhay mat ket noi, dong thoi giu man hinh sang (`stayon true`) va them Clash of Clans vao Doze whitelist. (Chi khi bam nut `X` dong cua so voi `exit code 0` thi moi tat han).
 
-### Buoc 3: Kiem thu truoc khi chay
+### Buoc 4: Kiem thu truoc khi chay
 ```bash
 python -m pytest tests/test_offline_suite.py -v --timeout=30
 ```
