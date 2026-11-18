@@ -34,7 +34,7 @@ if not "%ANDROID_SERIAL%"=="" set "SERIAL_ARG=-s %ANDROID_SERIAL%"
 :RECONNECT_LOOP
 cls
 echo ====================================================================
-echo   KET NOI MAN HINH DIEN THOAI CHO CLASH OF CLANS (AUTO RECONNECT)
+echo   KET NOI MAN HINH DIEN THOAI CHO CLASH OF CLANS - AUTO RECONNECT
 echo   - ADB   : %ADB_EXE%
 echo   - SCRCPY: %SCRCPY_EXE%
 echo ====================================================================
@@ -42,14 +42,14 @@ echo ====================================================================
 "%ADB_EXE%" start-server >nul 2>&1
 "%ADB_EXE%" %SERIAL_ARG% get-state >nul 2>&1
 if errorlevel 1 (
-    echo [!] Dang thu ket noi lai ADB (adb reconnect)...
+    echo [!] Dang thu ket noi lai ADB...
     "%ADB_EXE%" %SERIAL_ARG% reconnect >nul 2>&1
     "%ADB_EXE%" wait-for-device
 )
 
 "%ADB_EXE%" %SERIAL_ARG% shell "svc power stayon true; settings put system screen_off_timeout 2147483647; dumpsys deviceidle whitelist +com.supercell.clashofclans >/dev/null 2>&1; input keyevent KEYCODE_WAKEUP; wm dismiss-keyguard" >nul 2>&1
 
-echo [OK] Dang mo cua so man hinh dien thoai... (Bam X de dong han; neu dut USB/ADB se tu ket noi lai)
+echo [OK] Dang mo cua so man hinh dien thoai - Bam X de dong han
 "%SCRCPY_EXE%" %SERIAL_ARG% --window-title="Samsung Galaxy S9 (CoC Auto)" --no-audio --stay-awake --max-fps=60
 set "EXIT_CODE=%ERRORLEVEL%"
 
@@ -58,6 +58,6 @@ if "%EXIT_CODE%"=="0" (
     exit /b 0
 )
 
-echo [CANH BAO] Mat ket noi scrcpy (exit=%EXIT_CODE%). Tu dong ket noi lai sau 2 giay...
+echo [CANH BAO] Mat ket noi scrcpy, ma loi=%EXIT_CODE%. Tu dong ket noi lai sau 2 giay...
 timeout /t 2 /nobreak >nul
 goto RECONNECT_LOOP
