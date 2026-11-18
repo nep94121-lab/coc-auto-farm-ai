@@ -173,3 +173,18 @@ Xem them quy trinh chup 6 anh va soi popup an toan:
 - Soi truoc khi bam: `python upgrade_manager_tools.py --inspect-pick scroll_pick_3 --scrolls 1 --inspect-mode build`
 - Thuc thi: `python upgrade_manager_tools.py --exec-build scroll_pick_3 --scrolls 1`
 - Tinh hen gio ngu: `python upgrade_manager_tools.py --test-wakeup "4H 19M" "5H 20M"`
+
+---
+
+## 7. Quy Tac Xu Ly Khi Loop Loi & Danh Thuc AI Day (5 Phut vs Vai Tieng)
+
+Khi loop cay (`loop_cay_tai_nguyen_doc_lap.py`) hoac nang tuong (`wall_upgrade_vision_manager.py`) gap su co va kich hoat danh thuc AI day, AI phai xu ly theo dung 2 muc do sau:
+
+1. **Nguyen tac uu tien so 1:** Luon kiem tra nguyen nhan loi, uu tien khoi phuc kha nang **cay tai nguyen + nang tuong tiep tuc** cang som cang tot.
+2. **Phan loai theo khoang thoi gian tu luc chay den luc bi goi day:**
+   - **Truong hop A - Lau lau moi goi day (vi du cach nhau vai tieng):**
+     - Day thuong la loi nho nhat thoi (lag mang, ket 1 popup la, rot ADB thoang qua).
+     - **Hanh dong:** Dua game ve Lang chinh sach se (`ensure_at_home()` hoac `python upgrade_manager_tools.py --restart-home`), kiem tra nhanh khong co loi nghiem trong, roi **bat lai ngay `python -u loop_cay_tai_nguyen_doc_lap.py`** de may cay va nang tuong tiep.
+   - **Truong hop B - Goi day qua nhanh (chi cach nhau khoang ~5 phut, hoac bi dung lien tuc trong < 5-10 phut):**
+     - Day la dau hieu **loi quy trinh / loi toa do / loi logic / mat ket noi thiet bi that** chu khong phai loi nho ngau nhien.
+     - **Hanh dong:** **KHONG bat mu lai ngay.** Phai doc ky `runtime/live_log.txt`, `runtime/loop_error_alert.json`, anh chup trong `runtime/alerts/`, kiem tra lai toan bo quy trinh va sua dut diem nguyen nhan goc truoc khi khoi dong lai loop.
