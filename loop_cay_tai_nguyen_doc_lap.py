@@ -22,7 +22,7 @@ BATTERY_MIN_THRESHOLD = 0
 BATTERY_RESUME_THRESHOLD = 0
 STOP_RESOURCE_THRESHOLD = 23_000_000
 STOP_DARK_ELIXIR_THRESHOLD = 300_000
-WALL_RETURN_TO_FARM_THRESHOLD = 3_000_000
+WALL_RETURN_TO_FARM_THRESHOLD = 0
 ERROR_ALERT_JSON = os.path.join(RUNTIME_DIR, "loop_error_alert.json")
 
 
@@ -80,9 +80,12 @@ def all_three_thresholds_reached(
     de_threshold=STOP_DARK_ELIXIR_THRESHOLD,
     elixir_threshold=None,
 ):
-    """Chỉ dừng cày khi ĐỒNG THỜI Vàng >= ngưỡng, Dầu tím >= ngưỡng VÀ Dầu đen >= ngưỡng DE."""
+    """Kiểm tra điều kiện dừng/nâng tường: Nếu de_threshold <= 0 thì chỉ cần Vàng >= ngưỡng VÀ Dầu tím >= ngưỡng."""
     e_th = threshold if elixir_threshold is None else elixir_threshold
-    return gold >= threshold and elixir >= e_th and dark_elixir >= de_threshold
+    base_check = (gold >= threshold and elixir >= e_th)
+    if de_threshold <= 0:
+        return base_check
+    return base_check and dark_elixir >= de_threshold
 
 
 def write_farm_status(payload):
@@ -185,16 +188,18 @@ def handle_home_resource_decision(gold, elixir, dark_elixir, cycle, phase_label,
     - Đạt đủ CẢ 3: dừng cày; nếu bật auto_upgrade_walls thì gọi Con Nâng Tường nâng xuống ngưỡng wall_return_to_farm rồi quay lại cày.
     """
     g_th, e_th, de_th, wall_th = load_dynamic_thresholds()
+    de_msg = f", DE >= {de_th:,}" if de_th > 0 else " (Đã tắt điều kiện Dầu đen)"
     cet.log(
         f"[VISION LÀNG CHÍNH - {phase_label}] Vàng = {gold:,} | Dầu tím = {elixir:,} | Dầu đen = {dark_elixir:,} "
-        f"(Ngưỡng dừng: Vàng >= {g_th:,}, Dầu tím >= {e_th:,}, DE >= {de_th:,})"
+        f"(Ngưỡng nâng tường: Vàng >= {g_th:,}, Dầu tím >= {e_th:,}{de_msg})"
     )
     reached, gold, elixir, dark_elixir = confirm_home_threshold_reached(
         gold, elixir, dark_elixir, g_th, de_th
     )
     reached = all_three_thresholds_reached(gold, elixir, dark_elixir, g_th, de_th, elixir_threshold=e_th)
     if not reached:
-        cet.log(f"➡️ [QUYẾT ĐỊNH] Chưa đủ đồng thời cả 3 ngưỡng ({g_th:,}/{e_th:,}/{de_th:,}) -> Tiếp tục cày!")
+        cond_str = f"{g_th:,}/{e_th:,}/{de_th:,}" if de_th > 0 else f"Vàng {g_th:,} & Dầu tím {e_th:,}"
+        cet.log(f"➡️ [QUYẾT ĐỊNH] Chưa đủ ngưỡng ({cond_str}) -> Tiếp tục cày!")
         write_farm_status({
             "phase": "farming_continue",
             "cycle": cycle,
@@ -207,8 +212,9 @@ def handle_home_resource_decision(gold, elixir, dark_elixir, cycle, phase_label,
         })
         return "CONTINUE_FARM"
 
+    reached_str = "CẢ 3 NGƯỠNG" if de_th > 0 else "CẢ 2 NGƯỠNG (Vàng & Dầu tím >= 23M)"
     cet.log(
-        f"🚨 [QUYẾT ĐỊNH] Kho đạt đủ CẢ 3 NGƯỠNG (Vàng = {gold:,} | Dầu tím = {elixir:,} | Dầu đen = {dark_elixir:,})!"
+        f"🚨 [QUYẾT ĐỊNH] Kho đạt đủ {reached_str} (Vàng = {gold:,} | Dầu tím = {elixir:,} | Dầu đen = {dark_elixir:,})!"
     )
     if not auto_upgrade_walls:
         cet.log("🛑 Đã dừng vòng lặp cày (chế độ chỉ cày, đạt đủ 3 ngưỡng).")
@@ -234,6 +240,8 @@ def handle_home_resource_decision(gold, elixir, dark_elixir, cycle, phase_label,
         "wall_stop_threshold": wall_th,
     })
 
+    import importlib
+    importlib.reload(wum)
     wall_res = wum.run_wall_upgrade_session(stop_threshold=wall_th)
     cet.log(f"🧱 [KẾT QUẢ CON NÂNG TƯỜNG]: {wall_res}")
 

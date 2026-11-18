@@ -88,6 +88,24 @@ def adb_shell(cmd, timeout=12):
 
 
 def reconnect_adb():
+    """Khôi phục kết nối ADB ưu tiên giữ nguyên ADB server để không làm văng (out) cửa sổ scrcpy."""
+    _close_touch_pipe()
+    try:
+        chk = subprocess.run(_adb_base_args() + ["get-state"], capture_output=True, text=True, timeout=4)
+        if chk.returncode == 0 and "device" in (chk.stdout or ""):
+            log("[ADB] Thiết bị vẫn online, giữ nguyên ADB server (tránh văng scrcpy)...")
+            time.sleep(0.5)
+            return
+        log("[ADB] Thử khôi phục mềm (adb reconnect) không tắt server...")
+        subprocess.run(_adb_base_args() + ["reconnect"], capture_output=True, timeout=6)
+        time.sleep(1.0)
+        chk2 = subprocess.run(_adb_base_args() + ["get-state"], capture_output=True, text=True, timeout=4)
+        if chk2.returncode == 0 and "device" in (chk2.stdout or ""):
+            log("[ADB] Đã khôi phục mềm thành công!")
+            return
+    except Exception as exc:
+        log(f"[ADB] Lỗi reconnect mềm: {exc}")
+
     log("[ADB] Khởi động lại ADB Server để khôi phục kết nối...")
     try:
         subprocess.run([ADB, "kill-server"], capture_output=True, timeout=10)
@@ -104,14 +122,20 @@ def capture_screen(save_name=None, retry=True):
     """
     import struct
 
-    try:
-        r = subprocess.run(
-            _adb_base_args() + ["exec-out", "screencap"],
-            capture_output=True,
-            timeout=10,
-        )
-    except subprocess.TimeoutExpired:
-        r = None
+    def _grab():
+        try:
+            return subprocess.run(
+                _adb_base_args() + ["exec-out", "screencap"],
+                capture_output=True,
+                timeout=12,
+            )
+        except subprocess.TimeoutExpired:
+            return None
+
+    r = _grab()
+    if r is None or r.returncode != 0 or not r.stdout or len(r.stdout) < 100000:
+        time.sleep(0.4)
+        r = _grab()
 
     if r is None or r.returncode != 0 or not r.stdout or len(r.stdout) < 100000:
         if retry:
@@ -249,6 +273,13 @@ def tap(x, y, sleep_sec=0.25, hold_sec=0.045):
         time.sleep(sleep_sec)
 
 
+def swipe(x1, y1, x2, y2, duration_ms=300, sleep_sec=0.25):
+    """Vuốt màn hình từ (x1, y1) đến (x2, y2) trong khoảng thời gian duration_ms."""
+    adb_shell(f"input swipe {int(x1)} {int(y1)} {int(x2)} {int(y2)} {int(duration_ms)}")
+    if sleep_sec > 0:
+        time.sleep(sleep_sec)
+
+
 def close_all_modals():
     # Chạm các nút X góc trên & vùng cỏ trống bên phải (1815, 480) — tránh (480, 120) là Trader & tránh đáy giữa (Gem)
     for mx, my in [(2025, 80), (1850, 75), (1815, 110), (1502, 339), (1815, 480), (750, 75)]:
@@ -365,18 +396,29 @@ def get_status(with_grid=True):
     return data
 
 
-def apply_ultra_battery_saver(keep_awake=True):
+_LAST_ULTRA_SAVER_TS = 0.0
+_LAST_KEEP_AWAKE = None
+
+
+def apply_ultra_battery_saver(keep_awake=True, force=False):
     """
-    Ép toàn bộ cấu hình tiết kiệm pin tối đa + khôi phục sạc cho Galaxy S9 (Root + ADB):
+    Ép toàn bộ cấu hình tiết kiệm pin tối đa + khôi phục sạc + chống văng app cho Galaxy S9 (Root + ADB):
     1. Gỡ khóa cảm biến nhiệt cuộn sạc không dây bị đứt (ADC=0 -> 900 / -200) để mở lại sạc (Status=Charging, Health=Good),
        vẫn giữ nguyên bảo vệ nhiệt phần cứng thật của IC sạc (chg_temp) và cổng USB (usb_temp).
-    2. Tắt 3 nhân lớn Mongoose M3 (cpu5..7), hạ xung cpu0..3 xuống 832MHz, cpu4 xuống 650MHz, GPU xuống 260MHz
-       (giảm nhiệt CPU từ 76°C xuống ~48°C và đảo dòng từ -2134 sang sạc dương +37 ngay trên cổng USB Laptop).
-    3. Hạ độ sáng màn hình về 0, bật Battery Saver, tắt GPS/Bluetooth/4G/quét ngầm/loa/rung/animation.
+    2. Tắt 3 nhân lớn Mongoose M3 (cpu5..7), hạ xung cpu0..3 xuống 832MHz, cpu4 xuống 650MHz, GPU xuống 260MHz.
+    3. Thêm Clash of Clans vào whitelist Doze/App Standby và đặt stayon + timeout vô hạn để không bao giờ bị ngủ/out app.
+    4. Giảm tần suất gọi lệnh nặng (tối đa mỗi 15 phút/lần trừ khi force=True) và bỏ am kill-all định kỳ gây giật tải hệ thống.
     """
+    global _LAST_ULTRA_SAVER_TS, _LAST_KEEP_AWAKE
+    now = time.time()
     stayon_val = "true" if keep_awake else "false"
+    if not force and _LAST_KEEP_AWAKE == keep_awake and (now - _LAST_ULTRA_SAVER_TS) < 900:
+        adb_shell(f"svc power stayon {stayon_val}", timeout=4)
+        return {"ok": True, "keep_awake": keep_awake, "throttled": True}
+
     adb_shell(
         f"svc power stayon {stayon_val}; "
+        "settings put system screen_off_timeout 2147483647; "
         "settings put global low_power 1; "
         "settings put global low_power_sticky 1; "
         "settings put system show_touches 0; "
@@ -389,7 +431,6 @@ def apply_ultra_battery_saver(keep_awake=True):
         "settings put secure location_mode 0; "
         "settings put global wifi_scan_always_enabled 0; "
         "settings put global ble_scan_always_enabled 0; "
-        "svc bluetooth disable; svc data disable; "
         "settings put system haptic_feedback_enabled 0; "
         "settings put system sip_key_feedback_vibration 0; "
         "settings put system sound_effects_enabled 0; "
@@ -397,9 +438,14 @@ def apply_ultra_battery_saver(keep_awake=True):
         "settings put global window_animation_scale 0; "
         "settings put global transition_animation_scale 0; "
         "settings put global animator_duration_scale 0; "
-        "am kill-all"
+        "dumpsys deviceidle whitelist +com.supercell.clashofclans >/dev/null 2>&1; "
+        "appops set com.supercell.clashofclans RUN_IN_BACKGROUND allow >/dev/null 2>&1; "
+        "appops set com.supercell.clashofclans RUN_ANY_IN_BACKGROUND allow >/dev/null 2>&1",
+        timeout=12,
     )
     root_script = (
+        "svc bluetooth disable >/dev/null 2>&1\n"
+        "svc data disable >/dev/null 2>&1\n"
         "echo '950 910 -300 -250 950 910 -300 -250' > /sys/class/power_supply/battery/batt_temp_table\n"
         "echo 950 > /sys/class/power_supply/battery/batt_tune_temp_high_normal\n"
         "echo 910 > /sys/class/power_supply/battery/batt_tune_temp_high_rec_normal\n"
@@ -426,6 +472,8 @@ def apply_ultra_battery_saver(keep_awake=True):
         )
     except Exception as exc:
         log(f"[WARN] Root battery tune warning: {exc}")
+    _LAST_ULTRA_SAVER_TS = now
+    _LAST_KEEP_AWAKE = keep_awake
     return {"ok": True, "keep_awake": keep_awake}
 
 

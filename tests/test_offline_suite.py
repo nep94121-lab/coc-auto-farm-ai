@@ -92,7 +92,7 @@ def test_scroll_pick_coordinates_and_bounds():
 def test_dynamic_priority_config_and_thresholds():
     cfg = umt.load_upgrade_priority_config()
     bf = cfg["builder_focus"]
-    assert bf["target_builders"] == 6
+    assert bf["target_builders"] == 7
     names = [(t["name"], t["max_level"]) for t in bf["priority_targets"]]
     assert names[0] == ("Archer Tower", 21)
     assert names[1] == ("Cannon", 21)
@@ -180,3 +180,29 @@ def test_repo_portability_syntax_and_lf_encoding():
                 txt = open(path, "r", encoding="utf-8").read()
                 assert "504cdb97" not in txt, f"Hardcoded session id in {path}"
                 assert "C:\\Users\\LENOVO" not in txt, f"Hardcoded user path in {path}"
+
+
+def test_battle_combo_matches_recorded_jsonl():
+    import phan2_tha_quan_ve_lang as p2
+
+    combo_file = os.path.join(REPO_ROOT, "assets", "user_battle_combo.jsonl")
+    assert os.path.exists(combo_file)
+    records = [json.loads(line) for line in open(combo_file, "r", encoding="utf-8") if line.strip()]
+    assert len(p2.BATTLE_COMBO_STEPS) == 37
+    assert len(records) >= 37
+    for delay_sec, x, y, hold_sec in p2.BATTLE_COMBO_STEPS:
+        assert 0 <= x < 2220
+        assert 0 <= y < 1080
+        assert delay_sec >= 0.0
+        assert hold_sec >= 0.045
+
+
+def test_wall_grid_and_known_l18_skip():
+    import wall_upgrade_vision_manager as wum
+
+    all_cands = wum.generate_wall_grid_candidates()
+    assert len(all_cands) == 19 * 16
+    known = wum.load_known_l18_coords()
+    assert len(known) >= 16
+    assert (765, 415) in known
+

@@ -1,17 +1,23 @@
 {
   "builder_focus": {
-    "target_builders": 6,
-    "focus_mode": "focus_until_max",
+    "target_builders": 7,
+    "allow_goblin_builder": true,
+    "focus_mode": "top_count_highest_level",
+    "selection_strategy": "highest_level_first",
     "priority_targets": [
       {
         "name": "Archer Tower",
         "max_level": 21,
-        "notes": "Uu tien toan bo tho xay tap trung nang Archer Tower den khi dat Max (Level 21)"
+        "target_count": 4,
+        "selection_order": "highest_level_under_max",
+        "notes": "Uu tien nang max 4 Archer Tower co level cao nhat truoc den Level 21"
       },
       {
         "name": "Cannon",
         "max_level": 21,
-        "notes": "Sau khi Archer Tower dat Max hoac xen ke khi con tho xay ranh, nang Cannon den Level 21"
+        "target_count": 4,
+        "selection_order": "highest_level_under_max",
+        "notes": "Uu tien song song nang max 4 Cannon co level cao nhat den Level 21"
       }
     ],
     "fallback_targets": [
@@ -22,15 +28,23 @@
       "Minion Prince",
       "Dragon Duke"
     ],
-    "max_scrolls_to_search": 5
+    "max_scrolls_to_search": 12
   },
   "research_priority": {
-    "notes": "AI doc full_3_lab.png va full_3b_lab_scrolled.png de chon muc nghien cuu phu hop voi kho Elixir/Dark Elixir"
+    "allow_goblin_researcher": true,
+    "target_slots": 2,
+    "notes": "AI doc full_3_lab.png va full_3b_lab_scrolled.png de chon muc nghien cuu phu hop cho ca Lab chinh va Goblin Researcher"
+  },
+  "wakeup_policy": {
+    "normal_buffer_minutes": 3,
+    "boosted_buffer_seconds": 45,
+    "notes": "Khi dang co Builder Potion x10 (4h) hoac Research Potion x24 (2h), giam buffer dem nguoc xuong ~30-60s de khong de tho xay/Lab cho lau"
   },
   "resource_stop_thresholds": {
-    "gold": 23000000,
-    "elixir": 23000000,
-    "dark_elixir": 300000,
-    "wall_return_to_farm": 3000000
+    "gold": 24000000,
+    "elixir": 24000000,
+    "dark_elixir": 0,
+    "wall_return_to_farm": 0,
+    "notes": "Nguong dung cay: Vang >= 24M va Dau tim >= 24M moi goi nang tuong; nang sach tai nguyen (1 vien = 6M, 4 vien = 24M) roi quay lai loop cay"
   }
 }

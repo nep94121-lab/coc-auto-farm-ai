@@ -6,20 +6,22 @@ __pycache__/
 .venv/
 venv/
 
-# Runtime logs, screenshots & alerts
-runtime/
+# Runtime logs, screenshots & alerts (chi giu lai danh sach tuong Level 18 da nang)
+runtime/*
+!runtime/known_level18_walls.json
 *.png
 *.jpg
 *.jpeg
 *.log
 
-# Preserve visual assets tracked in git
+# Preserve visual & combo assets tracked in git
 !assets/
 !assets/**/*.png
 !assets/**/*.jpg
 !assets/**/*.npz
 !assets/**/*.sh
 !assets/**/*.json
+!assets/**/*.jsonl
 !assets/**/*.bin
 
 # OS / IDE metadata
