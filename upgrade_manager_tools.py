@@ -642,11 +642,37 @@ def return_from_builder_base_to_home(img=None):
     return False
 
 
+def ensure_emulator_running_and_adb(wait_sec=40):
+    """Nếu BlueStacks (HD-Player.exe) tắt đột ngột (vd OOM), tự gọi BS5Launch và nối lại ADB."""
+    if sys.platform != "win32":
+        return True
+    import subprocess
+    try:
+        tl = subprocess.run(["tasklist", "/fi", "imagename eq HD-Player.exe"], capture_output=True, text=True, timeout=8)
+        if "HD-Player.exe" not in (tl.stdout or ""):
+            cet.log("[EMU-GUARD] Phát hiện HD-Player.exe không chạy -> Tự bật BS5Launch...")
+            subprocess.run(["schtasks", "/run", "/tn", "BS5Launch"], capture_output=True, text=True, timeout=10)
+            deadline = time.time() + wait_sec
+            while time.time() < deadline:
+                time.sleep(3.0)
+                subprocess.run([cet.ADB, "connect", "127.0.0.1:5555"], capture_output=True, text=True, timeout=6)
+                chk = subprocess.run([cet.ADB, "devices"], capture_output=True, text=True, timeout=6)
+                if "127.0.0.1:5555\tdevice" in (chk.stdout or ""):
+                    cet.log("[EMU-GUARD] BlueStacks Pie64 và ADB đã kết nối lại.")
+                    return True
+            return False
+    except Exception:
+        pass
+    return True
+
+
 def restart_game_to_home(reason="out_of_scope", screenshot=None, timeout_sec=55):
     """
     Khi giao diện bị lệch khỏi phạm vi điều khiển: ghi log + lưu ảnh báo thức AI,
     tắt hẳn Clash of Clans rồi mở lại cho tới khi về đúng màn hình Làng chính.
     """
+    import subprocess
+    ensure_emulator_running_and_adb()
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     alert_dir = os.path.join(cet.RUNTIME_DIR, "alerts")
     os.makedirs(alert_dir, exist_ok=True)
@@ -683,6 +709,9 @@ def restart_game_to_home(reason="out_of_scope", screenshot=None, timeout_sec=55)
                 cet.log("[ALERT-RECOVERY] Đã khởi động lại và về đúng Làng chính an toàn.")
                 zoom_res = cet.zoom_out_pinch(repeats=1)
                 return {"ok": True, "screen": "home", "alert": alert_payload, "zoom_out": zoom_res}
+            if cvg.is_inactivity_reload_dialog(img):
+                cet.tap(740, 622, sleep_sec=6.0)
+                continue
             if cvg.is_reload_game_dialog(img):
                 cet.tap(1038, 970, sleep_sec=4.0)
                 continue

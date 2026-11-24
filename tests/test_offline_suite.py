@@ -287,3 +287,15 @@ def test_continuous_farm_no_stop_ignores_full_storages(monkeypatch):
         assert st["phase"] == "farming_continuous"
         assert st["no_stop"] is True
 
+
+def test_inactivity_reload_dialog_detection():
+    img = np.zeros((1080, 2220, 3), dtype=np.uint8)
+    # Khung hộp thoại Material xám tối (66, 66, 66) & chữ 'RELOAD GAME' màu teal
+    img[415:660, 645:1575] = (66, 66, 66)
+    img[605:630, 665:815] = (140, 145, 70)
+    assert cvg.is_inactivity_reload_dialog(img) is True
+    assert cvg.is_reload_game_dialog(img) is True
+    # Không phải hộp thoại nếu màn hình Làng chính sáng bình thường
+    normal = np.full((1080, 2220, 3), 180, dtype=np.uint8)
+    assert cvg.is_inactivity_reload_dialog(normal) is False
+

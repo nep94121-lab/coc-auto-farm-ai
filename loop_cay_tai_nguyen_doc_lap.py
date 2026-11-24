@@ -123,6 +123,14 @@ def ensure_at_home():
         if img is None:
             time.sleep(1.0)
             continue
+        if cvg.is_inactivity_reload_dialog(img):
+            cet.log("[RELOAD-GUARD] Phát hiện hộp thoại 'Anyone there? / RELOAD GAME' -> Bấm (740, 622)...")
+            cet.tap(740, 622, sleep_sec=7.0)
+            continue
+        if cvg.is_reload_game_dialog(img):
+            cet.log("[RELOAD-GUARD] Phát hiện hộp thoại 'Reload game' -> Bấm nạp lại game...")
+            cet.tap(1038, 970, sleep_sec=6.0)
+            continue
         if cvg.is_builder_base(img):
             cet.log("[BUILDER-BASE-GUARD] Phát hiện đang lạc sang Làng Thợ! Bấm thuyền quay về Làng chính...")
             if umt.return_from_builder_base_to_home(img):
@@ -132,10 +140,6 @@ def ensure_at_home():
             continue
         if cvg.is_battle_button_visible(img):
             return img
-        if cvg.is_reload_game_dialog(img):
-            cet.log("[RELOAD-GUARD] Phát hiện hộp thoại 'Reload game' -> Bấm nạp lại game...")
-            cet.tap(1038, 970, sleep_sec=6.0)
-            continue
         if cvg.is_return_home_visible(img):
             p2.dismiss_return_home_safely()
             continue

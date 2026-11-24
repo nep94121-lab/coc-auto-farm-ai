@@ -285,10 +285,37 @@ def is_next_button_visible(img):
     return int(orange_px) > 1500
 
 
+def is_inactivity_reload_dialog(img):
+    """Nhận diện hộp thoại Android 'Anyone there? / RELOAD GAME' giữa màn hình."""
+    if img is None or img.shape[0] < 700 or img.shape[1] < 1600:
+        return False
+    # Nền hộp thoại xám tối đồng nhất (x=1180..1540, y=435..580)
+    bg = img[435:580, 1180:1540]
+    bg_mean = bg.mean(axis=(0, 1))
+    bg_std = bg.std(axis=(0, 1))
+    if not (35 <= float(bg_mean.mean()) <= 105 and float(bg_std.max()) < 20.0):
+        return False
+    if abs(float(bg_mean[0]) - float(bg_mean[2])) > 18.0:
+        return False
+    # Nút chữ 'RELOAD GAME' màu xanh ngọc ở (650..840, 595..645)
+    btn = img[595:645, 650:840]
+    teal_px = int(
+        np.sum(
+            (btn[:, :, 1] > 100)
+            & (btn[:, :, 0] > 95)
+            & (btn[:, :, 2] < 95)
+            & ((btn[:, :, 1].astype(np.int16) - btn[:, :, 2].astype(np.int16)) > 25)
+        )
+    )
+    return teal_px >= 60
+
+
 def is_reload_game_dialog(img):
-    """Kiểm tra hộp thoại mất kết nối / Anyone there? có nút Reload game màu xanh dương."""
+    """Kiểm tra hộp thoại mất kết nối / Anyone there? có nút Reload game."""
     if img is None:
         return False
+    if is_inactivity_reload_dialog(img):
+        return True
     crop = img[930:1010, 890:1190]
     b, g, r = crop[:, :, 0], crop[:, :, 1], crop[:, :, 2]
     blue_px = np.sum((b > 180) & (g > 100) & (r < 110))
