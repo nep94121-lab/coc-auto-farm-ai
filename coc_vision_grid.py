@@ -27,7 +27,7 @@ SLOTS_META = [
 ]
 
 
-def _extract_digits_from_mask(mask, min_h=16, max_h=25, min_w=6, max_w=26, min_area=80, max_y_jitter=None, max_x_gap=None):
+def _extract_digits_from_mask(mask, min_h=16, max_h=25, min_w=6, max_w=26, min_area=80, max_y_jitter=None, max_x_gap=None, left_align=False):
     num_labels, _, stats, _ = cv2.connectedComponentsWithStats(mask)
     cands = []
     for i in range(1, num_labels):
@@ -43,16 +43,28 @@ def _extract_digits_from_mask(mask, min_h=16, max_h=25, min_w=6, max_w=26, min_a
             return 0
     cands.sort(key=lambda item: item[0])
     if max_x_gap is not None and len(cands) > 1:
-        # Số trên thanh tài nguyên luôn căn phải; loại bỏ nhiễu nền lọt ở mép trái nếu cách > max_x_gap
-        kept = [cands[-1]]
-        for idx in range(len(cands) - 2, -1, -1):
-            cur = cands[idx]
-            nxt = kept[0]
-            gap = nxt[0] - (cur[0] + cur[2])
-            if gap > max_x_gap:
-                break
-            kept.insert(0, cur)
-        cands = kept
+        if left_align:
+            # Số Available Loot nhà địch căn trái sát icon; loại rác phía bên phải nếu cách > max_x_gap
+            kept = [cands[0]]
+            for idx in range(1, len(cands)):
+                prev = kept[-1]
+                cur = cands[idx]
+                gap = cur[0] - (prev[0] + prev[2])
+                if gap > max_x_gap:
+                    break
+                kept.append(cur)
+            cands = kept
+        else:
+            # Số trên thanh tài nguyên Làng chính luôn căn phải; loại bỏ nhiễu nền lọt ở mép trái nếu cách > max_x_gap
+            kept = [cands[-1]]
+            for idx in range(len(cands) - 2, -1, -1):
+                cur = cands[idx]
+                nxt = kept[0]
+                gap = nxt[0] - (cur[0] + cur[2])
+                if gap > max_x_gap:
+                    break
+                kept.insert(0, cur)
+            cands = kept
     digits = []
     for x, y, w, h in cands:
         patch = cv2.resize(mask[y : y + h, x : x + w], (16, 24)).astype(np.float32)
@@ -67,27 +79,28 @@ def _extract_digits_from_mask(mask, min_h=16, max_h=25, min_w=6, max_w=26, min_a
 
 
 def read_coc_number(crop):
-    """Đọc số trắng viền đen của Clash of Clans bằng connected-components + template matching."""
+    """Đọc số trắng viền đen của Clash of Clans (ưu tiên chữ trắng sáng + lọc nhiễu phải để không dính nền)."""
     if crop is None or crop.size == 0:
         return 0
-    gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
-
-    # 1. Otsu — tự động tìm ngưỡng sáng/tối tối ưu (hoạt động với cả số vàng, trắng, tím)
-    _, mask_otsu = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-    res = _extract_digits_from_mask(mask_otsu, min_h=15, max_h=28, min_w=5, max_w=28, min_area=70)
-    if res > 0:
-        return res
-
-    # 2. Dự phòng: threshold cứng gray>100 (màn hình sáng)
-    mask_gray = (gray > 100).astype(np.uint8) * 255
-    res = _extract_digits_from_mask(mask_gray, min_h=15, max_h=28, min_w=5, max_w=28, min_area=70)
-    if res > 0:
-        return res
-
-    # 3. Dự phòng: ngưỡng RGB cũ
     b, g_ch, r = crop[:, :, 0], crop[:, :, 1], crop[:, :, 2]
-    mask_rgb = ((r > 190) & (g_ch > 185) & (b > 170)).astype(np.uint8) * 255
-    return _extract_digits_from_mask(mask_rgb, min_h=15, max_h=28, min_w=5, max_w=28, min_area=50)
+    kwargs = dict(min_h=15, max_h=27, min_w=5, max_w=26, min_area=60, max_y_jitter=4, max_x_gap=20, left_align=True)
+
+    # 1. Ưu tiên mặt nạ chữ trắng tinh (Available Loot luôn là chữ trắng sáng viền đen)
+    for thresh in (225, 200):
+        mask_rgb = ((r > thresh) & (g_ch > thresh) & (b > thresh)).astype(np.uint8) * 255
+        res = _extract_digits_from_mask(mask_rgb, **kwargs)
+        if res > 0:
+            return res
+
+    # 2. Dự phòng Otsu (chặt chiều cao/khoảng cách)
+    gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
+    _, mask_otsu = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    res = _extract_digits_from_mask(mask_otsu, **kwargs)
+    if res > 0:
+        return res
+
+    mask_gray = (gray > 140).astype(np.uint8) * 255
+    return _extract_digits_from_mask(mask_gray, **kwargs)
 
 
 def read_enemy_loot(img):
@@ -224,13 +237,20 @@ def is_builder_base(img):
     """Nhận diện Làng Thợ (Builder Base) để không nhận nhầm sang Làng chính."""
     if img is None or img.shape[0] < 900 or img.shape[1] < 2000:
         return False
-    # Ở Làng Thợ: không có Dầu đen nên nút '+' Gem màu xanh nằm tại y=165..225
-    gem_plus = img[165:225, 1845:1925]
+    # Ở Làng chính có hàng 4 (nút '+' Gem màu xanh lá + dấu '+' trắng tại y=240..295); Làng Thợ không có hàng 4
+    row4 = img[240:295, 1845:1915]
+    r4_green = int(np.sum((row4[:, :, 1] > 165) & (row4[:, :, 2] < 140) & (row4[:, :, 0] < 90)))
+    r4_white = int(np.sum((row4[:, :, 0] > 220) & (row4[:, :, 1] > 220) & (row4[:, :, 2] > 220)))
+    if r4_green > 800 and r4_white > 50:
+        return False
+    # Ở Làng Thợ: không có Dầu đen nên nút '+' Gem (xanh lá + dấu '+' trắng) nằm tại y=165..225
+    gem_plus = img[165:225, 1845:1915]
     green_px = int(np.sum((gem_plus[:, :, 1] > 165) & (gem_plus[:, :, 2] < 140) & (gem_plus[:, :, 0] < 90)))
+    plus_white = int(np.sum((gem_plus[:, :, 0] > 220) & (gem_plus[:, :, 1] > 220) & (gem_plus[:, :, 2] > 220)))
     # Đồng thời góc trái phía trên nút Battle có hộp sao trắng (0/9...)
     star_box = img[800:865, 25:195]
     white_px = int(np.sum((star_box[:, :, 0] > 210) & (star_box[:, :, 1] > 210) & (star_box[:, :, 2] > 210)))
-    return green_px > 350 and white_px > 500
+    return green_px > 1000 and plus_white > 50 and white_px > 500
 
 
 def is_battle_button_visible(img):
@@ -279,7 +299,7 @@ def is_return_home_visible(img):
     """Kiểm tra nút Return Home màu xanh lá giữa đáy màn hình tổng kết trận (hỗ trợ cả Victory và Defeat)."""
     if img is None:
         return False
-    if is_battle_button_visible(img):
+    if is_battle_button_visible(img) or is_in_battle(img):
         return False
     
     # 1. Đối sánh mẫu template chính xác tuyệt đối

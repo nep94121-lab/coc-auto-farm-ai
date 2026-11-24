@@ -27,7 +27,9 @@ def dismiss_return_home_safely():
             cet.log(f"[RETURN-HOME] Lần #{attempt+1}: Phát hiện màn hình kết quả trận -> Bấm Return Home (1111, 925)...")
             if attempt >= 2:
                 cet.adb_shell("input tap 1111 925")
-                time.sleep(2.0)
+                # Dự phòng màn hình Rương/Event có nút Continue (1126, 986) & Skip (2007, 1011)
+                cet.tap(1126, 986, sleep_sec=0.5)
+                cet.tap(2007, 1011, sleep_sec=1.5)
             else:
                 cet.tap(1111, 925, sleep_sec=2.0, hold_sec=0.1)
             continue
@@ -104,12 +106,26 @@ def run_battle():
         cet.log("[PHẦN 2] CẢNH BÁO: Chưa vào được trận đấu sau 15s. Hủy chuỗi thả quân!")
         return False
 
-    cet.log(f"[PHẦN 2] Trận đấu đã sẵn sàng! Thực thi combo mới ({len(BATTLE_COMBO_STEPS)} thao tác)...")
+    cet.log(f"[PHẦN 2] Trận đấu đã sẵn sàng! Thu nhỏ bản đồ đối thủ trước khi thả quân...")
+    cet.zoom_out_pinch(repeats=1, sleep_sec=0.15)
+    cet.log(f"[PHẦN 2] Thực thi combo mới ({len(BATTLE_COMBO_STEPS)} thao tác)...")
 
     for delay_sec, tx, ty, hold_sec in BATTLE_COMBO_STEPS:
         if delay_sec > 0:
             time.sleep(delay_sec)
         cet.tap(tx, ty, sleep_sec=0.0, hold_sec=hold_sec)
+
+    # Sau khi thả hết quân, tướng, phép và bật hết kỹ năng (#37):
+    # Bấm nút tốc độ 1x -> 2x -> 4x (2 lần tại (2141, 595)) nếu vẫn đang trong trận
+    img_pre_speed = cet.capture_screen()
+    if img_pre_speed is None or (
+        not cvg.is_return_home_visible(img_pre_speed)
+        and not cvg.is_battle_button_visible(img_pre_speed)
+    ):
+        cet.log("[PHẦN 2] Đã thả hết quân & kỹ năng -> Bấm nút 1x 2 lần (2141, 595) để tua nhanh 4x!")
+        cet.tap(2141, 595, sleep_sec=0.25, hold_sec=0.06)
+        cet.tap(2141, 595, sleep_sec=0.25, hold_sec=0.06)
+        cet.capture_screen("after_speed_4x.png")
 
     # ĐỒNG BỘ KẾT THÚC TRẬN: Chờ tối đa 145s để xuất hiện nút Return Home
     cet.log("[PHẦN 2] Đã thả xong toàn bộ combo quân! Đang canh nút Return Home (tối đa 145s)...")

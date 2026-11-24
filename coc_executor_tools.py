@@ -110,6 +110,8 @@ def reconnect_adb():
     try:
         subprocess.run([ADB, "kill-server"], capture_output=True, timeout=10)
         subprocess.run([ADB, "start-server"], capture_output=True, timeout=10)
+        if SERIAL and ":" in SERIAL:
+            subprocess.run([ADB, "connect", SERIAL], capture_output=True, timeout=6)
         time.sleep(1.2)
     except Exception as exc:
         log(f"[ADB] Lỗi khởi động lại ADB: {exc}")
@@ -183,13 +185,19 @@ atexit.register(_close_touch_pipe)
 
 def _get_surface_orientation():
     global _TOUCH_ORIENTATION
-    if _TOUCH_ORIENTATION in (1, 3):
+    if _TOUCH_ORIENTATION is not None:
         return _TOUCH_ORIENTATION
     r = adb_shell("dumpsys input | grep SurfaceOrientation", timeout=5)
-    if r and r.stdout and "1" in r.stdout and "3" not in r.stdout:
-        _TOUCH_ORIENTATION = 1
+    if r and r.stdout:
+        txt = r.stdout.strip()
+        if "0" in txt and "1" not in txt and "3" not in txt:
+            _TOUCH_ORIENTATION = 0
+        elif "1" in txt and "3" not in txt:
+            _TOUCH_ORIENTATION = 1
+        else:
+            _TOUCH_ORIENTATION = 3
     else:
-        _TOUCH_ORIENTATION = 3
+        _TOUCH_ORIENTATION = 0
     return _TOUCH_ORIENTATION
 
 
@@ -198,12 +206,15 @@ def _ev(ev_type, ev_code, ev_val):
 
 
 def _ensure_touch_pipe():
+    # BlueStacks Virtual Touch (event4, orient=0) dùng 'input tap' ổn định 100%
+    if _get_surface_orientation() == 0:
+        return None
     global _TOUCH_PIPE
     if _TOUCH_PIPE is not None and _TOUCH_PIPE.poll() is None:
         return _TOUCH_PIPE
     try:
         _TOUCH_PIPE = subprocess.Popen(
-            _adb_base_args() + ["shell", "su -c 'cat > /dev/input/event0'"],
+            _adb_base_args() + ["shell", "cat > /dev/input/event4"],
             stdin=subprocess.PIPE,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
@@ -224,12 +235,15 @@ def tap(x, y, sleep_sec=0.25, hold_sec=0.045):
     orient = _get_surface_orientation()
     px = max(0, min(2219, int(x)))
     py = max(0, min(1079, int(y)))
-    if orient == 1:
-        rx = max(0, min(4095, int(round(4095.0 - (py * 4096.0 / 1080.0)))))
-        ry = max(0, min(4095, int(round(px * 4096.0 / 2220.0))))
+    if orient == 0:
+        rx = max(0, min(32767, int(round(px * 32767.0 / 2220.0))))
+        ry = max(0, min(32767, int(round(py * 32767.0 / 1080.0))))
+    elif orient == 1:
+        rx = max(0, min(32767, int(round(32767.0 - (py * 32767.0 / 1080.0)))))
+        ry = max(0, min(32767, int(round(px * 32767.0 / 2220.0))))
     else:
-        rx = max(0, min(4095, int(round(py * 4096.0 / 1080.0))))
-        ry = max(0, min(4095, int(round(4095.0 - (px * 4096.0 / 2220.0)))))
+        rx = max(0, min(32767, int(round(py * 32767.0 / 1080.0))))
+        ry = max(0, min(32767, int(round(32767.0 - (px * 32767.0 / 2220.0)))))
 
     pipe = _ensure_touch_pipe()
     if pipe is not None and pipe.stdin is not None:
@@ -309,7 +323,7 @@ def _run_device_gesture(tag, asset_dir_name, script_name, repeats=1, sleep_sec=0
     for r in range(repeats):
         ran = False
         if has_bundle:
-            res = adb_shell(f"su -c 'sh /data/local/tmp/{asset_dir_name}/{script_name}'", timeout=25)
+            res = adb_shell(f"sh /data/local/tmp/{asset_dir_name}/{script_name}", timeout=25)
             ran = bool(res and res.returncode == 0)
         if not ran and fallback_shell:
             log(f"[{tag}] Dùng fallback -> {fallback_shell}")
@@ -321,20 +335,106 @@ def _run_device_gesture(tag, asset_dir_name, script_name, repeats=1, sleep_sec=0
     return {"ok": True, "method": method, "repeats": repeats}
 
 
+def _pinch_zoom_out_bluestacks(sweeps=4):
+    """Chụm 2 ngón đồng thời qua /dev/input/event4 cho BlueStacks (orient=0), mất ~1.2s, không kích nhầm tường."""
+    global _TRACKING_ID
+    proc = subprocess.Popen(
+        _adb_base_args() + ["shell", "cat > /dev/input/event4"],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    try:
+        time.sleep(0.08)
+        y = 13653  # y=450/1080 * 32767 (vùng giữa an toàn, tránh HUD)
+        for _ in range(max(1, int(sweeps))):
+            _TRACKING_ID = (_TRACKING_ID + 2) % 60000 + 1000
+            x1_s, x2_s = 8120, 24650  # x=550, x=1670
+            dx = 490
+            pkt_down = b"".join(
+                [
+                    _ev(3, 47, 0),
+                    _ev(3, 57, _TRACKING_ID),
+                    _ev(3, 53, x1_s),
+                    _ev(3, 54, y),
+                    _ev(3, 47, 1),
+                    _ev(3, 57, _TRACKING_ID + 1),
+                    _ev(3, 53, x2_s),
+                    _ev(3, 54, y),
+                    _ev(1, 330, 1),
+                    _ev(0, 0, 0),
+                ]
+            )
+            proc.stdin.write(pkt_down)
+            proc.stdin.flush()
+            time.sleep(0.04)
+            x1, x2 = x1_s, x2_s
+            for _ in range(12):
+                x1 += dx
+                x2 -= dx
+                pkt_move = b"".join(
+                    [
+                        _ev(3, 47, 0),
+                        _ev(3, 53, x1),
+                        _ev(3, 47, 1),
+                        _ev(3, 53, x2),
+                        _ev(0, 0, 0),
+                    ]
+                )
+                proc.stdin.write(pkt_move)
+                proc.stdin.flush()
+                time.sleep(0.025)
+            pkt_up = b"".join(
+                [
+                    _ev(3, 47, 0),
+                    _ev(3, 57, -1),
+                    _ev(3, 47, 1),
+                    _ev(3, 57, -1),
+                    _ev(1, 330, 0),
+                    _ev(0, 0, 0),
+                ]
+            )
+            proc.stdin.write(pkt_up)
+            proc.stdin.flush()
+            time.sleep(0.08)
+        proc.stdin.close()
+        proc.wait(timeout=5)
+        return proc.returncode == 0
+    except Exception:
+        try:
+            proc.kill()
+        except Exception:
+            pass
+        return False
+
+
 def zoom_out_pinch(repeats=1, sleep_sec=0.25):
     """Thực thi động tác chụm 2 ngón tay thu nhỏ màn hình (pinch zoom-out) từ thao tác tay của Sếp."""
+    if _get_surface_orientation() == 0:
+        sweeps = max(1, int(repeats)) * 4
+        if _pinch_zoom_out_bluestacks(sweeps=sweeps):
+            if sleep_sec > 0:
+                time.sleep(sleep_sec)
+            log(f"[ZOOM-OUT] Đã thực thi xong ({repeats} nhịp, method=event4_fast_pipe).")
+            return {"ok": True, "method": "event4_fast_pipe", "repeats": repeats}
     return _run_device_gesture(
         "ZOOM-OUT",
         "zoom_pinch_fast",
         "run_pinch.sh",
         repeats=repeats,
         sleep_sec=sleep_sec,
-        fallback_shell="su -c 'sh /sdcard/do_pinch.sh'",
+        fallback_shell="sh /sdcard/do_pinch.sh",
     )
 
 
 def scroll_upgrade_list(repeats=1, sleep_sec=0.3):
-    """Lướt xuống 1 nhịp trong danh sách nâng cấp Công trình (Build) hoặc Nghiên cứu (Lab) (~4.5s)."""
+    """Lướt xuống 1 nhịp trong danh sách nâng cấp Công trình (Build) hoặc Nghiên cứu (Lab)."""
+    if _get_surface_orientation() == 0:
+        repeats = max(1, int(repeats))
+        for _ in range(repeats):
+            swipe(1904, 851, 1937, 81, duration_ms=650, sleep_sec=sleep_sec)
+        log(f"[SCROLL-UPGRADE] Đã thực thi xong ({repeats} nhịp, method=adb_swipe_bs).")
+        return {"ok": True, "method": "adb_swipe_bs", "repeats": repeats}
     return _run_device_gesture(
         "SCROLL-UPGRADE",
         "swipe_list_fast",
@@ -464,7 +564,7 @@ def apply_ultra_battery_saver(keep_awake=True, force=False):
     )
     try:
         subprocess.run(
-            _adb_base_args() + ["shell", "su -c sh"],
+            _adb_base_args() + ["shell", "sh"],
             input=root_script,
             capture_output=True,
             text=True,
@@ -905,7 +1005,7 @@ def prepare_village_wall_grid():
     để Con số 1 (AI Planner) nhìn chọn chính xác tọa độ các viên Tường cần nâng.
     """
     close_all_modals()
-    adb_shell("su -c 'sh /sdcard/do_pinch.sh'")
+    adb_shell("sh /sdcard/do_pinch.sh")
     time.sleep(1.0)
     adb_shell("input swipe 1110 250 1110 900 350")
     time.sleep(0.8)

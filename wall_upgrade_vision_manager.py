@@ -22,9 +22,10 @@ BTN_ADD_10 = (798, 844)                # Nút "+10 Add Wall"
 BTN_ADD_1 = (1005, 844)                # Nút "+1 Add Wall"
 BTN_DOUBLE_HAMMER_GOLD = (1214, 844)   # Nút 2 Búa Vàng sau khi bấm Upgrade More
 BTN_DOUBLE_HAMMER_ELIXIR = (1423, 844) # Nút 2 Búa Dầu sau khi bấm Upgrade More
-BTN_SINGLE_HAMMER_GOLD = (1315, 842)   # Nút 1 Búa Vàng khi chưa bấm Upgrade More
-BTN_SINGLE_HAMMER_ELIXIR = (1575, 842) # Nút 1 Búa Dầu khi chưa bấm Upgrade More
-BTN_CONFIRM_OKAY = (1319, 736)         # Nút "Okay" màu xanh lá trong popup xác nhận nâng hàng tường
+BTN_SINGLE_HAMMER_GOLD = (1205, 800)   # Nút 1 Búa Vàng khi chưa bấm Upgrade More
+BTN_SINGLE_HAMMER_ELIXIR = (1375, 800) # Nút 1 Búa Dầu khi chưa bấm Upgrade More
+BTN_CONFIRM_OKAY = (1319, 698)         # Nút "Okay" màu xanh lá trong popup xác nhận nâng hàng tường
+BTN_SINGLE_CONFIRM = (1491, 944)       # Nút "Confirm" màu xanh lá trong popup nâng 1 viên tường
 POINT_SAFE_DESELECT = (2150, 750)      # Vùng mép ngoài viền biển cỏ an toàn (không có bẫy/công trình)
 
 # ------------------------------------------------------------------------------
@@ -34,8 +35,8 @@ BOX_WALL_LEVEL = (820, 665, 1520, 758)
 BOX_UPGRADE_BUTTONS = (1125, 755, 1494, 949)
 BOX_RESOURCE_BAR = cvg.BOX_RESOURCE_BAR
 
-# Gốc và vector chuẩn của khối tường chữ nhật (19 dọc x 16 ngang)
-WALL_GRID_ORIGIN = (765, 415)
+# Gốc và vector chuẩn của khối tường chữ nhật (19 dọc x 16 ngang) ở mức zoom-out BlueStacks
+WALL_GRID_ORIGIN = (810, 434)
 DELTA_ROW_X = 19.89   # Trục dọc: 19 viên, dx=+19.89, dy=+11.00
 DELTA_ROW_Y = 11.00
 DELTA_COL_X = 18.53   # Trục ngang: 16 viên, dx=+18.53, dy=-14.20
@@ -45,14 +46,9 @@ GRID_NUM_COLS = 16
 
 MAX_WALL_LEVEL = 18
 WALL_STOP_THRESHOLD_DEFAULT = 0
-KNOWN_L18_FILE = os.path.join(cet.RUNTIME_DIR, "known_level18_walls.json")
+KNOWN_L18_FILE = os.path.join(cet.RUNTIME_DIR, "known_level18_walls_v2.json")
 
-# 16 viên đầu tiên dọc hàng 1 đã được kiểm chứng thực tế đạt Level 18
-INITIAL_VERIFIED_L18 = [
-    (765, 415), (785, 426), (805, 437), (825, 448), (845, 459), (864, 470),
-    (884, 481), (904, 492), (924, 503), (944, 514), (964, 525), (984, 536),
-    (1004, 547), (1024, 558), (1043, 569), (1063, 580)
-]
+INITIAL_VERIFIED_L18 = []
 
 
 def load_known_l18_coords():
@@ -71,7 +67,7 @@ def load_known_l18_coords():
 
 
 def save_known_l18_coords(coords_set):
-    """Lưu danh sách tọa độ tường đã đạt Level 18 ra file JSON."""
+    """Lưu danh sách tọa độ tường đã đạt Level 18 ra file JSON (an toàn với WinError 5)."""
     try:
         import json
         from datetime import datetime
@@ -85,7 +81,18 @@ def save_known_l18_coords(coords_set):
         tmp = KNOWN_L18_FILE + ".tmp"
         with open(tmp, "w", encoding="utf-8") as f:
             json.dump(payload, f, indent=2)
-        os.replace(tmp, KNOWN_L18_FILE)
+        for attempt in range(4):
+            try:
+                os.replace(tmp, KNOWN_L18_FILE)
+                return
+            except PermissionError:
+                try:
+                    if os.path.exists(KNOWN_L18_FILE):
+                        os.remove(KNOWN_L18_FILE)
+                    os.rename(tmp, KNOWN_L18_FILE)
+                    return
+                except Exception:
+                    time.sleep(0.1 * (attempt + 1))
     except Exception as e:
         cet.log(f"[WARN] Không thể lưu {KNOWN_L18_FILE}: {e}")
 
@@ -289,25 +296,68 @@ def find_l16_wall_candidates(full_img, max_points=36):
     return candidates[:max_points]
 
 
+def find_l17_white_wall_candidates(full_img, max_points=45):
+    """
+    Phát hiện trực tiếp cụm tường trắng-kem Level 17 trên màn hình Làng chính (không phụ thuộc lưới tĩnh).
+    Lấy các điểm nằm thực sự trên pixel tường trắng, sắp xếp theo cụm diện tích lớn nhất trước.
+    """
+    if full_img is None or full_img.size == 0:
+        return []
+    x1, y1, x2, y2 = 740, 200, 1400, 690
+    roi = full_img[y1:y2, x1:x2]
+    hsv = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
+    mask = cv2.inRange(hsv, (12, 0, 215), (32, 90, 255))
+
+    # Loại góc chữ 'Upgrade' trại lính bên phải trên và vùng icon kho góc phải dưới
+    mask[:90, max(0, 1260 - x1):] = 0
+    mask[max(0, 560 - y1):, max(0, 1220 - x1):] = 0
+
+    closed = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, np.ones((7, 7), np.uint8))
+    num, labels, stats, _ = cv2.connectedComponentsWithStats(closed)
+    comps = []
+    for i in range(1, num):
+        area = int(stats[i, cv2.CC_STAT_AREA])
+        if area >= 120:
+            comps.append((area, i))
+    comps.sort(key=lambda t: -t[0])
+
+    pts = []
+    for _, comp_id in comps:
+        comp_mask = ((labels == comp_id) & (mask > 0))
+        ys, xs = np.where(comp_mask)
+        for py, px in zip(ys[::4], xs[::4]):
+            fx, fy = int(px) + x1, int(py) + y1
+            if all(abs(fx - ox) >= 18 or abs(fy - oy) >= 12 for ox, oy in pts):
+                pts.append((fx, fy))
+                if len(pts) >= max_points:
+                    return pts
+    return pts
+
+
 def cmd_execute_wall_upgrade(start_coord=None, resource="auto", stop_threshold=WALL_STOP_THRESHOLD_DEFAULT):
     """
-    Thực thi 1 đợt nâng tường AI Vision (Level < 17) từ kho tài nguyên thực tế, dừng trước Gem:
-    - Tự dò khối tường xanh xám bất kể zoom, đi dọc cột rồi sang phải.
-    - Xác nhận đúng menu Wall và cấp < 17.
-    - Chỉ tiêu phần tài nguyên vượt ngưỡng giữ an toàn (để hạ về quanh stop_threshold ~3M).
+    Thực thi 1 đợt nâng tường AI Vision (Level < 18) từ kho tài nguyên thực tế, dừng trước Gem:
+    - Ưu tiên bắt trực tiếp các điểm tường trắng Level 17 bằng Computer Vision.
+    - Xác nhận đúng menu Wall và cấp < 18 (giá < 8,000,000).
+    - Nâng hết mức tối đa 4 viên/lượt theo tài nguyên hiện có.
     """
     img_home = ensure_clean_home_view()
     if img_home is None:
         return "ERROR_NO_SCREEN"
 
     known_l18 = load_known_l18_coords()
+    visual_pts = find_l17_white_wall_candidates(img_home, max_points=45)
     if start_coord is not None:
-        all_candidates = generate_wall_grid_candidates(origin=start_coord)
+        grid_pts = generate_wall_grid_candidates(origin=start_coord)
     else:
-        all_candidates = generate_wall_grid_candidates()
+        grid_pts = generate_wall_grid_candidates()
 
-    candidates = [pt for pt in all_candidates if pt not in known_l18]
-    cet.log(f"[WALL-UPGRADE] Đã loại {len(known_l18)} viên Level 18 đã biết. Còn {len(candidates)}/{len(all_candidates)} viên cần kiểm tra.")
+    grid_filtered = [pt for pt in grid_pts if pt not in known_l18]
+    candidates = visual_pts + [pt for pt in grid_filtered if pt not in visual_pts]
+    cet.log(
+        f"[WALL-UPGRADE] Vision phát hiện {len(visual_pts)} điểm tường trắng Lv17; "
+        f"dự phòng thêm {len(grid_filtered)} điểm lưới (đã loại {len(known_l18)} Lv18)."
+    )
 
     for idx, (wx, wy) in enumerate(candidates, 1):
         cet.log(f"[WALL-UPGRADE] Quét tường #{idx}/{len(candidates)} tại ({wx}, {wy})...")
@@ -362,10 +412,12 @@ def cmd_execute_wall_upgrade(start_coord=None, resource="auto", stop_threshold=W
 
         if target_res == "elixir":
             chosen_double_btn = BTN_DOUBLE_HAMMER_ELIXIR
+            chosen_single_btn = BTN_SINGLE_HAMMER_ELIXIR
             avail_amount = current_elixir
             res_label = "Dầu tím"
         else:
             chosen_double_btn = BTN_DOUBLE_HAMMER_GOLD
+            chosen_single_btn = BTN_SINGLE_HAMMER_GOLD
             avail_amount = current_gold
             res_label = "Vàng"
 
@@ -376,38 +428,56 @@ def cmd_execute_wall_upgrade(start_coord=None, resource="auto", stop_threshold=W
         max_walls = max(1, int(avail_amount // wall_cost))
         max_walls = min(max_walls, 4)
 
-        cet.log(f"[WALL-UPGRADE] Nâng {max_walls} tường bằng {res_label} ({avail_amount:,} / {wall_cost:,})...")
+        upgraded_count = max_walls
+        if max_walls > 1:
+            cet.log(f"[WALL-UPGRADE] Nâng {max_walls} tường bằng {res_label} ({avail_amount:,} / {wall_cost:,})...")
+            tap(BTN_UPGRADE_MORE, delay=1.2)
+            time.sleep(0.8)
+            img_more = capture_full_screen()
+            if img_more is not None and is_valid_wall_menu(img_more):
+                # Kiểm tra thanh gọn 5 nút (-1, +1, Gold, Elixir, Ring): nút Nhẫn xanh nằm ở x=1415..1595
+                ring_crop = img_more[750:860, 1430:1570]
+                rb, _, rr = ring_crop[:, :, 0], ring_crop[:, :, 1], ring_crop[:, :, 2]
+                is_compact_bar = int(np.sum((rb > 170) & (rr < 70))) > 5000
+                if is_compact_bar:
+                    add1_btn = (895, 800)
+                    dbl_btn = (1305, 800) if target_res == "elixir" else (1100, 800)
+                else:
+                    add1_btn = BTN_ADD_1
+                    dbl_btn = chosen_double_btn
 
-        # Bấm Upgrade More để vào giao diện nâng nhiều tường
-        tap(BTN_UPGRADE_MORE, delay=1.2)
-        time.sleep(1.0)
-        for _ in range(max_walls - 1):
-            tap(BTN_ADD_1, delay=1.0)
-            time.sleep(1.0)
-        # Bấm nút 2 búa theo loại tài nguyên
-        tap(chosen_double_btn, delay=1.2)
-        time.sleep(1.2)
-        # Bấm nút Okay xác nhận
-        tap(BTN_CONFIRM_OKAY, delay=1.5)
-        time.sleep(1.5)
+                for _ in range(max_walls - 1):
+                    tap(add1_btn, delay=0.9)
+                    time.sleep(0.7)
+                tap(dbl_btn, delay=1.2)
+                time.sleep(1.0)
+                tap(BTN_CONFIRM_OKAY, delay=1.5)
+                time.sleep(1.5)
+            else:
+                # Khi còn quá ít tường hoặc Upgrade More mở popup xác nhận trực tiếp -> Chuyển về nâng 1 viên
+                cet.log(f"[WALL-UPGRADE] Upgrade More không mở thanh chọn nhiều -> Chuyển sang nâng 1 tường bằng {res_label}...")
+                tap((890, 698), delay=0.6)
+                tap(POINT_SAFE_DESELECT, delay=0.5)
+                tap((wx, wy), delay=0.8)
+                tap(chosen_single_btn, delay=0.9)
+                tap(BTN_SINGLE_CONFIRM, delay=1.4)
+                upgraded_count = 1
+        else:
+            cet.log(f"[WALL-UPGRADE] Nâng 1 tường bằng {res_label} ({avail_amount:,} / {wall_cost:,})...")
+            tap(chosen_single_btn, delay=0.9)
+            tap(BTN_SINGLE_CONFIRM, delay=1.4)
+            upgraded_count = 1
 
-        # Cập nhật các viên vừa nâng thành công vào danh sách Level 18
-        try:
-            cur_pos = all_candidates.index((wx, wy))
-            for off in range(max_walls):
-                if cur_pos + off < len(all_candidates):
-                    known_l18.add(all_candidates[cur_pos + off])
-            save_known_l18_coords(known_l18)
-            cet.log(f"[WALL-UPGRADE] Đã cập nhật {max_walls} viên vừa nâng vào danh sách Level 18 (Tổng: {len(known_l18)} viên).")
-        except Exception as e:
-            cet.log(f"[WARN] Lỗi khi cập nhật danh sách Level 18: {e}")
+        # Sau khi bấm nâng thành công, không tự suy đoán cộng dồn tọa độ hàng xóm vào known_l18
+        # vì game tự chọn các viên kế tiếp không theo thứ tự mảng lưới.
+        cet.log(f"[WALL-UPGRADE] Hoàn tất nâng {upgraded_count} tường bằng {res_label}.")
 
-        return f"UPGRADE_{max_walls}_WALLS_{target_res.upper()}_SUCCESS"
+        return f"UPGRADE_{upgraded_count}_WALLS_{target_res.upper()}_SUCCESS"
 
     return "SEARCH_EXHAUSTED"
 
 
-def run_wall_upgrade_session(stop_threshold=WALL_STOP_THRESHOLD_DEFAULT, max_rounds=8):
+def run_wall_upgrade_session(stop_threshold=WALL_STOP_THRESHOLD_DEFAULT, max_rounds=10):
     """
     Chạy trọn vẹn phiên nâng tường khi kho đạt 24M cho tới khi cả Vàng & Dầu hạ xuống < 6,000,000.
     Sau khi xong tự trả về Làng chính sạch sẽ để gọi lại Con Loop Cày.
@@ -417,6 +487,8 @@ def run_wall_upgrade_session(stop_threshold=WALL_STOP_THRESHOLD_DEFAULT, max_rou
     cet.log("==================================================")
 
     cet.adb_shell("settings put system pointer_location 0")
+    ensure_clean_home_view()
+    cet.zoom_out_pinch(1, sleep_sec=0.25)
 
     last_resources = None
     no_change_count = 0

@@ -66,9 +66,12 @@ def write_loop_error_alert(reason, cycle=0, exc_text="", screenshot=None):
         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
     }
     tmp_path = ERROR_ALERT_JSON + ".tmp"
-    with open(tmp_path, "w", encoding="utf-8", newline="\n") as f:
-        json.dump(payload, f, ensure_ascii=False, indent=2)
-    os.replace(tmp_path, ERROR_ALERT_JSON)
+    try:
+        with open(tmp_path, "w", encoding="utf-8", newline="\n") as f:
+            json.dump(payload, f, ensure_ascii=False, indent=2)
+        os.replace(tmp_path, ERROR_ALERT_JSON)
+    except Exception:
+        pass
     return payload
 
 
@@ -93,9 +96,23 @@ def write_farm_status(payload):
     os.makedirs(RUNTIME_DIR, exist_ok=True)
     payload["updated_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     tmp_path = STATUS_JSON + ".tmp"
-    with open(tmp_path, "w", encoding="utf-8", newline="\n") as f:
-        json.dump(payload, f, ensure_ascii=False, indent=2)
-    os.replace(tmp_path, STATUS_JSON)
+    try:
+        with open(tmp_path, "w", encoding="utf-8", newline="\n") as f:
+            json.dump(payload, f, ensure_ascii=False, indent=2)
+        for _retry in range(3):
+            try:
+                os.replace(tmp_path, STATUS_JSON)
+                break
+            except PermissionError:
+                time.sleep(0.5)
+        else:
+            try:
+                os.remove(STATUS_JSON)
+                os.rename(tmp_path, STATUS_JSON)
+            except Exception:
+                pass
+    except Exception:
+        pass
 
 
 def ensure_at_home():
@@ -365,5 +382,15 @@ def run_pure_farm_loop(auto_upgrade_walls=True):
 
 
 if __name__ == "__main__":
+    import traceback
     no_wall = "--no-wall" in sys.argv
-    run_pure_farm_loop(auto_upgrade_walls=not no_wall)
+    try:
+        run_pure_farm_loop(auto_upgrade_walls=not no_wall)
+    except Exception:
+        tb = traceback.format_exc()
+        cet.log(f"🚨 [FATAL-CRASH] Vòng lặp gặp lỗi nghiêm trọng:\n{tb}")
+        try:
+            write_loop_error_alert("fatal_loop_crash", cycle=0, exc_text=tb, screenshot=cet.capture_screen())
+        except Exception:
+            pass
+        raise

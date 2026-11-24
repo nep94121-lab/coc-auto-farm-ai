@@ -92,7 +92,7 @@ def test_scroll_pick_coordinates_and_bounds():
 def test_dynamic_priority_config_and_thresholds():
     cfg = umt.load_upgrade_priority_config()
     bf = cfg["builder_focus"]
-    assert bf["target_builders"] == 7
+    assert bf["target_builders"] == 6
     names = [(t["name"], t["max_level"]) for t in bf["priority_targets"]]
     assert names[0] == ("Archer Tower", 21)
     assert names[1] == ("Cannon", 21)
@@ -137,11 +137,12 @@ def test_wakeup_duration_math():
 
 
 def test_builder_base_guard_blocks_false_home_village():
-    # Làng Thợ giả lập: nút Battle vàng góc trái dưới + hộp sao trắng phía trên + nút '+' Gem xanh ở y=165..225
+    # Làng Thợ giả lập: nút Battle vàng góc trái dưới + hộp sao trắng phía trên + nút '+' Gem xanh có dấu '+' trắng
     bb_img = np.zeros((1080, 2220, 3), dtype=np.uint8)
     bb_img[900:1030, 40:180] = (20, 180, 240)
     bb_img[810:855, 45:165] = (240, 240, 240)
     bb_img[175:215, 1860:1905] = (40, 210, 80)
+    bb_img[185:205, 1875:1895] = (255, 255, 255)
     assert cvg.is_builder_base(bb_img) is True
     assert cvg.is_battle_button_visible(bb_img) is False
 
@@ -197,12 +198,65 @@ def test_battle_combo_matches_recorded_jsonl():
         assert hold_sec >= 0.045
 
 
-def test_wall_grid_and_known_l18_skip():
+def test_wall_grid_and_known_l18_skip(monkeypatch):
+    import tempfile
     import wall_upgrade_vision_manager as wum
 
     all_cands = wum.generate_wall_grid_candidates()
     assert len(all_cands) == 19 * 16
-    known = wum.load_known_l18_coords()
-    assert len(known) >= 16
-    assert (765, 415) in known
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        monkeypatch.setattr(wum, "KNOWN_L18_FILE", os.path.join(tmpdir, "known_level18_walls_v2.json"))
+        known = wum.load_known_l18_coords()
+        assert known == set()
+        wum.save_known_l18_coords({(765, 415), (900, 500)})
+        reloaded = wum.load_known_l18_coords()
+        assert (765, 415) in reloaded
+        assert len(reloaded) == 2
+
+
+def test_calibrated_coords_and_triple_modal_helpers(monkeypatch):
+    assert umt.COORDS_PET["pet_assigned_1"] == (1900, 180)
+    assert umt.COORDS_PET["pet_assigned_2"] == (1900, 280)
+    assert umt.COORDS_NAV["bb_boat_dock"] == (1770, 465)
+    assert umt.COORDS_NAV["return_home_button"] == (118, 910)
+
+    # Tạo ảnh danh sách giả lập 2220x1080 với mẫu duy nhất không trùng lặp để kiểm tra triple-match
+    rng = np.random.default_rng(42)
+    page = rng.integers(20, 230, size=(1080, 2220, 3), dtype=np.uint8)
+    rx1, rx2 = umt.VISION_BOXES["row_card_x"]
+    bx1, bx2 = umt.VISION_BOXES["row_badge_x"]
+    cx1, cx2 = umt.VISION_BOXES["row_cost_x"]
+
+    card_tmpl = page[400:465, rx1:rx2].copy()
+    badge_tmpl = page[400:465, bx1:bx2].copy()
+    cost_tmpl = page[400:465, cx1:cx2].copy()
+
+    hit = umt.match_upgrade_row_triple(page, card_tmpl, badge_tmpl, cost_tmpl)
+    assert hit["matched"] is True
+    assert hit["aligned"] is True
+    assert hit["y_row"] == 400
+    assert hit["tap_point"] == [(rx1 + rx2) // 2, 432]
+
+    # Lệch hàng (badge khác vị trí -> phải bị từ chối vì không đồng trục)
+    bad_badge = page[700:765, bx1:bx2].copy()
+    miss = umt.match_upgrade_row_triple(page, card_tmpl, bad_badge, cost_tmpl)
+    assert miss["matched"] is False
+    assert miss["aligned"] is False
+
+    # Kiểm tra verify_modal_title_and_confirm nhận diện tiêu đề + nút xanh
+    modal = rng.integers(20, 120, size=(1080, 2220, 3), dtype=np.uint8)
+    tx1, ty1, tx2, ty2 = umt.VISION_BOXES["modal_title_canon"]
+    title_tmpl = modal[ty1:ty2, tx1:tx2].copy()
+    modal[880:950, 1200:1360] = (30, 190, 60)  # BGR green confirm button
+
+    monkeypatch.setattr(umt.cet, "capture_screen", lambda: modal)
+    res_ok = umt.verify_modal_title_and_confirm(title_tmpl, settle_sec=0)
+    assert res_ok["ok"] is True
+    assert res_ok["title_score"] >= 0.99
+
+    # Tiêu đề sai (nhầm công trình) phải trả ok=False
+    wrong_tmpl = rng.integers(0, 255, size=title_tmpl.shape, dtype=np.uint8)
+    res_bad = umt.verify_modal_title_and_confirm(wrong_tmpl, settle_sec=0)
+    assert res_bad["ok"] is False
 

@@ -99,8 +99,20 @@ COORDS_RESEARCH = {
 
 COORDS_PET = {
     "open_pet_house": (2166, 1009),     # Vào nghiên cứu thú cưng (Hero Pets)
-    "select_item": (1849, 564),         # Chọn thú cưng cần nâng
+    "select_item": (1900, 180),         # Hàng thú cưng Assigned #1 (tránh y=564 dính thanh tiêu đề Unassigned)
+    "pet_assigned_1": (1900, 180),      # Hàng Assigned #1 (y=140..220)
+    "pet_assigned_2": (1900, 280),      # Hàng Assigned #2 (y=240..320 - đã verify Unicorn)
+    "pet_assigned_3": (1900, 380),      # Hàng Assigned #3
+    "pet_assigned_4": (1900, 480),      # Hàng Assigned #4
     "confirm": (1496, 949),             # Xác nhận nâng cấp thú cưng
+}
+
+# Tọa độ điều hướng & khôi phục màn hình đã kiểm chứng thực tế trên BlueStacks 5 (2220x1080)
+COORDS_NAV = {
+    "return_home_button": (118, 910),       # Nút 'Return Home' ở góc dưới trái sau replay trận thủ
+    "bb_deselect_grass": (300, 550),        # Bấm vùng cỏ trống ở Làng Thợ bỏ chọn Builder Hall trước khi kéo map
+    "bb_boat_dock": (1770, 465),             # Thuyền ở bờ biển Đông-Bắc Làng Thợ (sau 2 nhịp kéo về góc NE)
+    "bs5_launcher_coc_icon": (352, 290),    # Icon Clash of Clans trên màn hình chính BlueStacks launcher
 }
 
 # Khung vùng nhìn (x1, y1, x2, y2) của các ảnh trạng thái & khung popup xác nhận nâng cấp
@@ -113,8 +125,14 @@ VISION_BOXES = {
     "img2_buildings_list": (1616, 72, 2219, 920),
     "img3_research_list": (1610, 71, 2205, 920),
     "img4_hero_pets_list": (1622, 35, 2220, 209),
+    "panel_list_settled": (1630, 120, 2200, 950),
+    "row_card_x": (1645, 2185),
+    "row_badge_x": (1645, 1720),
+    "row_cost_x": (2005, 2185),
     "modal_full": (320, 35, 1900, 1045),
     "modal_title_level": (420, 45, 1780, 165),
+    "modal_title_search": (750, 10, 1200, 90),
+    "modal_title_canon": (825, 20, 1110, 70),
     "modal_confirm_footer": (950, 845, 1890, 1035),
 }
 
@@ -293,13 +311,102 @@ def _check_confirm_button_color(img):
     return "no_confirm_button_visible"
 
 
-def scan_upgrade_pages(mode="build", max_scrolls=None, apply_filter=True, out_dir=None):
+def capture_drawer_settled(max_wait=1.8, poll_sec=0.3, diff_thresh=0.8):
+    """Đợi danh sách nâng cấp (x=1630..2200, y=120..950) hết trượt quán tính rồi mới chụp."""
+    x1, y1, x2, y2 = VISION_BOXES["panel_list_settled"]
+    prev_img = cet.capture_screen()
+    if prev_img is None:
+        return None
+    deadline = time.time() + max_wait
+    while time.time() < deadline:
+        time.sleep(poll_sec)
+        cur_img = cet.capture_screen()
+        if cur_img is None:
+            return prev_img
+        diff = float(np.mean(cv2.absdiff(cur_img[y1:y2, x1:x2], prev_img[y1:y2, x1:x2])))
+        prev_img = cur_img
+        if diff < diff_thresh:
+            return cur_img
+    return prev_img
+
+
+def match_upgrade_row_triple(
+    page_img,
+    card_tmpl,
+    badge_tmpl,
+    cost_tmpl,
+    row_thresh=0.90,
+    badge_thresh=0.90,
+    cost_thresh=0.94,
+    max_y_delta=18,
+):
+    """So khớp 3 vùng đồng trục (cả hàng, huy hiệu cấp, ô giá) để khóa đúng mục tiêu trước khi bấm."""
+    if page_img is None or card_tmpl is None or badge_tmpl is None or cost_tmpl is None:
+        return {"matched": False, "reason": "missing_image"}
+
+    rx1, rx2 = VISION_BOXES["row_card_x"]
+    bx1, bx2 = VISION_BOXES["row_badge_x"]
+    cx1, cx2 = VISION_BOXES["row_cost_x"]
+
+    res_row = cv2.matchTemplate(page_img[:, rx1:rx2], card_tmpl, cv2.TM_CCOEFF_NORMED)
+    _, row_score, _, row_loc = cv2.minMaxLoc(res_row)
+    res_badge = cv2.matchTemplate(page_img[:, bx1:bx2], badge_tmpl, cv2.TM_CCOEFF_NORMED)
+    _, badge_score, _, badge_loc = cv2.minMaxLoc(res_badge)
+    res_cost = cv2.matchTemplate(page_img[:, cx1:cx2], cost_tmpl, cv2.TM_CCOEFF_NORMED)
+    _, cost_score, _, cost_loc = cv2.minMaxLoc(res_cost)
+
+    y_row = int(row_loc[1])
+    y_badge = int(badge_loc[1])
+    y_cost = int(cost_loc[1])
+    aligned = abs(y_row - y_badge) <= max_y_delta and abs(y_row - y_cost) <= max_y_delta
+    matched = (
+        float(row_score) >= row_thresh
+        and float(badge_score) >= badge_thresh
+        and float(cost_score) >= cost_thresh
+        and aligned
+    )
+    tap_x = (rx1 + rx2) // 2
+    tap_y = y_row + card_tmpl.shape[0] // 2
+    return {
+        "matched": matched,
+        "aligned": aligned,
+        "row_score": round(float(row_score), 4),
+        "badge_score": round(float(badge_score), 4),
+        "cost_score": round(float(cost_score), 4),
+        "y_row": y_row,
+        "y_badge": y_badge,
+        "y_cost": y_cost,
+        "tap_point": [tap_x, tap_y],
+    }
+
+
+def verify_modal_title_and_confirm(title_tmpl, title_thresh=0.93, settle_sec=0.8):
+    """Chụp popup chi tiết, kiểm tra tiêu đề công trình & nút xanh Upgrade; trả về kết quả xác minh."""
+    time.sleep(settle_sec)
+    modal_img = cet.capture_screen()
+    if modal_img is None or title_tmpl is None:
+        return {"ok": False, "reason": "missing_modal_or_template", "modal_img": modal_img}
+
+    tx1, ty1, tx2, ty2 = VISION_BOXES["modal_title_search"]
+    res_title = cv2.matchTemplate(modal_img[ty1:ty2, tx1:tx2], title_tmpl, cv2.TM_CCOEFF_NORMED)
+    _, title_score, _, _ = cv2.minMaxLoc(res_title)
+    btn_status = _check_confirm_button_color(modal_img)
+    ok = float(title_score) >= title_thresh and btn_status == "green_confirm_available"
+    return {
+        "ok": ok,
+        "title_score": round(float(title_score), 4),
+        "button_status": btn_status,
+        "modal_img": modal_img,
+    }
+
+
+def scan_upgrade_pages(mode="build", max_scrolls=None, apply_filter=True, out_dir=None, settled=True, stop_at_end=True):
     """
     Lướt nhiều trang trong danh sách Buildings & Heroes hoặc Lab để AI tìm chính xác công trình ưu tiên (vd Archer Tower / Cannon).
     Trả về đường dẫn từng trang page_0.png .. page_N.png kèm cấu hình priority hiện hành.
     """
     cfg = load_upgrade_priority_config()
-    scroll_limit = int(max_scrolls if max_scrolls is not None else cfg["builder_focus"].get("max_scrolls_to_search", 5))
+    scroll_limit = int(max_scrolls if max_scrolls is not None else cfg["builder_focus"].get("max_scrolls_to_search", 18))
     save_dir = out_dir or os.path.join(cet.RUNTIME_DIR, f"scan_{mode}")
     os.makedirs(save_dir, exist_ok=True)
 
@@ -318,7 +425,7 @@ def scan_upgrade_pages(mode="build", max_scrolls=None, apply_filter=True, out_di
     else:
         raise ValueError(f"mode không hợp lệ: {mode}")
 
-    img_first = cet.capture_screen()
+    img_first = capture_drawer_settled() if settled else cet.capture_screen()
     if not cvg.is_upgrade_drawer_open(img_first):
         rec = restart_game_to_home(reason=f"scan_{mode}_drawer_missing", screenshot=img_first)
         return {"ok": False, "reason": "out_of_scope_restarted", "recovery": rec}
@@ -327,14 +434,22 @@ def scan_upgrade_pages(mode="build", max_scrolls=None, apply_filter=True, out_di
     p0 = os.path.join(save_dir, "page_0.png")
     cv2.imwrite(p0, img_first)
     pages.append({"scrolls": 0, "path": p0})
+    prev_panel = img_first
+    x1, y1, x2, y2 = VISION_BOXES["panel_list_settled"]
 
     for step in range(1, scroll_limit + 1):
         cet.scroll_upgrade_list(repeats=1, sleep_sec=0.35)
-        img_p = cet.capture_screen()
+        img_p = capture_drawer_settled() if settled else cet.capture_screen()
+        if img_p is None:
+            continue
+        if stop_at_end and prev_panel is not None:
+            end_diff = float(np.mean(cv2.absdiff(img_p[y1:y2, x1:x2], prev_panel[y1:y2, x1:x2])))
+            if end_diff < 1.2:
+                break
         ppath = os.path.join(save_dir, f"page_{step}.png")
-        if img_p is not None:
-            cv2.imwrite(ppath, img_p)
-            pages.append({"scrolls": step, "path": ppath})
+        cv2.imwrite(ppath, img_p)
+        pages.append({"scrolls": step, "path": ppath})
+        prev_panel = img_p
 
     exit_res = close_upgrade_panel_to_home(verify=True)
     result = {
@@ -429,9 +544,24 @@ def _crop_box(img, box_name):
 def _save_json_atomic(path, payload):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8", newline="\n") as f:
-        json.dump(payload, f, ensure_ascii=False, indent=2)
-    os.replace(tmp, path)
+    try:
+        with open(tmp, "w", encoding="utf-8", newline="\n") as f:
+            json.dump(payload, f, ensure_ascii=False, indent=2)
+        for _ in range(3):
+            try:
+                os.replace(tmp, path)
+                return
+            except PermissionError:
+                time.sleep(0.3)
+        try:
+            if os.path.exists(path):
+                os.remove(path)
+            os.rename(tmp, path)
+        except Exception:
+            with open(path, "w", encoding="utf-8", newline="\n") as f:
+                json.dump(payload, f, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
 
 
 def parse_coc_duration_seconds(duration_text):
@@ -492,15 +622,16 @@ def compute_safe_wakeup(durations, buffer_minutes=3, save_path=None):
 
 
 def return_from_builder_base_to_home(img=None):
-    """Bấm thuyền ở Làng Thợ (góc trên phải bờ biển) để quay về Làng chính."""
-    boat_candidates = [(1665, 165), (1740, 195), (1580, 175)]
+    """Bấm thuyền ở Làng Thợ (bờ Đông Bắc sau khi bỏ chọn Builder Hall & kéo về góc NE) để quay về Làng chính."""
+    boat_candidates = [COORDS_NAV["bb_boat_dock"], (1790, 385), (1740, 490), (1665, 165)]
     for attempt in range(2):
+        cet.close_all_modals()
+        _tap_pt(COORDS_NAV["bb_deselect_grass"], sleep_sec=0.4, label="Bỏ chọn công trình Làng Thợ")
         if attempt > 0:
-            cet.close_all_modals()
             cet.zoom_out_pinch(repeats=1)
-            # Kéo tay từ trên-phải xuống dưới-trái để lộ góc bờ biển trên-phải của Làng Thợ
-            cet.swipe(1650, 260, 650, 760, 350)
-            time.sleep(0.6)
+        # Kéo tay xuống-trái để lộ góc bờ biển Đông Bắc & con thuyền về Làng chính
+        cet.swipe(1000, 300, 400, 800, 500, sleep_sec=0.5)
+        cet.swipe(1100, 350, 400, 750, 600, sleep_sec=0.6)
         for bx, by in boat_candidates:
             cet.tap(bx, by, sleep_sec=2.3)
             cur = cet.capture_screen()
@@ -702,11 +833,18 @@ def format_coord_summary():
     lines.extend([
         "[5] Nghiên cứu thú cưng (Hero Pets):",
         f"  - Vào thú cưng         : {COORDS_PET['open_pet_house']}",
-        f"  - Chọn thú cưng        : {COORDS_PET['select_item']}",
+        f"  - Hàng Pet #1..#4      : {COORDS_PET['pet_assigned_1']}, {COORDS_PET['pet_assigned_2']}, {COORDS_PET['pet_assigned_3']}, {COORDS_PET['pet_assigned_4']}",
         f"  - Xác nhận thú cưng    : {COORDS_PET['confirm']}",
-        "[6] Khung cắt AI Vision (x1, y1, x2, y2):",
+        "[6] Điều hướng & Khôi phục Làng:",
+        f"  - Return Home (Visit)  : {COORDS_NAV['return_home_button']}",
+        f"  - Bỏ chọn Làng Thợ     : {COORDS_NAV['bb_deselect_grass']}",
+        f"  - Bến thuyền Làng Thợ  : {COORDS_NAV['bb_boat_dock']}",
+        f"  - Icon CoC BS5         : {COORDS_NAV['bs5_launcher_coc_icon']}",
+        "[7] Khung cắt AI Vision (x1, y1, x2, y2):",
         f"  - Ảnh 1 (Thợ xây X/6)  : {VISION_BOXES['img1_builder_count']}",
         f"  - Tài nguyên (dạt trái): {VISION_BOXES['shifted_resources']}",
+        f"  - Danh sách ổn định    : {VISION_BOXES['panel_list_settled']}",
+        f"  - So khớp tiêu đề popup: {VISION_BOXES['modal_title_search']}",
         f"  - Popup chi tiết (Lv)  : {VISION_BOXES['modal_title_level']}",
         f"  - Popup Confirm footer : {VISION_BOXES['modal_confirm_footer']}",
     ])
