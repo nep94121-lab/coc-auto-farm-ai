@@ -116,13 +116,18 @@ def write_farm_status(payload):
 
 
 def ensure_at_home():
+    none_captures = 0
     for _ in range(10):
         if not cet.ensure_game_foreground():
             continue
         img = cet.capture_screen()
         if img is None:
+            none_captures += 1
+            if none_captures >= 2:
+                return None
             time.sleep(1.0)
             continue
+        none_captures = 0
         if cvg.is_inactivity_reload_dialog(img):
             cet.log("[RELOAD-GUARD] Phát hiện hộp thoại 'Anyone there? / RELOAD GAME' -> Bấm (740, 622)...")
             cet.tap(740, 622, sleep_sec=7.0)

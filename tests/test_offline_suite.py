@@ -322,3 +322,31 @@ def test_ensure_emulator_running_relaunch_bs5(monkeypatch):
     assert umt.ensure_emulator_running_and_adb(wait_sec=5) is True
     assert any(c[:3] == ["schtasks", "/run", "/tn"] and c[3] == "BS5Launch" for c in calls)
 
+
+def test_reconnect_adb_relaunches_bs5_when_emulator_missing(monkeypatch):
+    import subprocess
+    from types import SimpleNamespace
+
+    calls = []
+    monkeypatch.setattr(cet.sys, "platform", "win32")
+    monkeypatch.setattr(cet.time, "sleep", lambda _s: None)
+    monkeypatch.setattr(cet, "SERIAL", "127.0.0.1:5555")
+
+    bs5_started = {"flag": False}
+
+    def fake_run(cmd, **_kwargs):
+        calls.append(cmd)
+        if cmd[0] == "tasklist":
+            return SimpleNamespace(stdout="INFO: No tasks are running.", returncode=0)
+        if cmd[0] == "schtasks":
+            bs5_started["flag"] = True
+            return SimpleNamespace(stdout="SUCCESS", returncode=0)
+        if "get-state" in cmd:
+            return SimpleNamespace(stdout="device\n" if bs5_started["flag"] else "", returncode=0 if bs5_started["flag"] else 1)
+        return SimpleNamespace(stdout="", returncode=0)
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    cet.reconnect_adb()
+    assert bs5_started["flag"] is True
+    assert any(c[:3] == ["schtasks", "/run", "/tn"] and c[3] == "BS5Launch" for c in calls)
+

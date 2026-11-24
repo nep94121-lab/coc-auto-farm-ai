@@ -110,11 +110,33 @@ def reconnect_adb():
     try:
         subprocess.run([ADB, "kill-server"], capture_output=True, timeout=10)
         subprocess.run([ADB, "start-server"], capture_output=True, timeout=10)
-        if SERIAL and ":" in SERIAL:
-            subprocess.run([ADB, "connect", SERIAL], capture_output=True, timeout=6)
+        target_serial = SERIAL if (SERIAL and ":" in SERIAL) else "127.0.0.1:5555"
+        subprocess.run([ADB, "connect", target_serial], capture_output=True, timeout=6)
         time.sleep(1.2)
+        chk3 = subprocess.run(_adb_base_args() + ["get-state"], capture_output=True, text=True, timeout=4)
+        if chk3.returncode == 0 and "device" in (chk3.stdout or ""):
+            return
     except Exception as exc:
         log(f"[ADB] Lỗi khởi động lại ADB: {exc}")
+
+    # Nếu giả lập BlueStacks (HD-Player.exe) tắt đột ngột (vd OOM), tự gọi BS5Launch ngay trong reconnect_adb
+    if sys.platform == "win32":
+        try:
+            tl = subprocess.run(["tasklist", "/fi", "imagename eq HD-Player.exe"], capture_output=True, text=True, timeout=8)
+            if "HD-Player.exe" not in (tl.stdout or ""):
+                log("[EMU-GUARD] Không thấy HD-Player.exe -> Tự bật BS5Launch khôi phục BlueStacks...")
+                subprocess.run(["schtasks", "/run", "/tn", "BS5Launch"], capture_output=True, text=True, timeout=10)
+                target_serial = SERIAL if (SERIAL and ":" in SERIAL) else "127.0.0.1:5555"
+                deadline = time.time() + 40
+                while time.time() < deadline:
+                    time.sleep(3.0)
+                    subprocess.run([ADB, "connect", target_serial], capture_output=True, timeout=6)
+                    chk4 = subprocess.run(_adb_base_args() + ["get-state"], capture_output=True, text=True, timeout=4)
+                    if chk4.returncode == 0 and "device" in (chk4.stdout or ""):
+                        log("[EMU-GUARD] Đã khôi phục BlueStacks và nối lại ADB thành công!")
+                        return
+        except Exception as exc:
+            log(f"[EMU-GUARD] Lỗi khi bật lại BS5Launch: {exc}")
 
 
 def capture_screen(save_name=None, retry=True):
