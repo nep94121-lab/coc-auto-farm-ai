@@ -145,13 +145,19 @@ def ensure_at_home():
             continue
         if cvg.is_battle_button_visible(img):
             return img
+        if cvg.is_cloud_return_home_screen(img):
+            cet.log("[CLOUD-RETURN] Phát hiện màn hình mây 'Unable to attack Village!' -> Bấm (122, 955)...")
+            cet.tap(122, 955, sleep_sec=2.5)
+            continue
         if cvg.is_return_home_visible(img):
-            p2.dismiss_return_home_safely()
+            if not p2.dismiss_return_home_safely():
+                return None
             continue
         if cvg.is_in_battle(img):
             cet.tap(135, 805, sleep_sec=0.9)
             cet.tap(1320, 680, sleep_sec=1.8)
-            p2.dismiss_return_home_safely()
+            if not p2.dismiss_return_home_safely():
+                return None
             continue
         cet.close_all_modals()
         time.sleep(1.0)

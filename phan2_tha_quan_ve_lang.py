@@ -19,9 +19,17 @@ def dismiss_return_home_safely():
         if cvg.is_battle_button_visible(img):
             cet.log("[RETURN-HOME] Đã về tới Làng chính thành công!")
             return True
+        if cvg.is_inactivity_reload_dialog(img):
+            cet.log("[RETURN-HOME] Phát hiện hộp thoại 'Anyone there? / RELOAD GAME' -> Bấm (740, 622)...")
+            cet.tap(740, 622, sleep_sec=7.0)
+            continue
         if cvg.is_reload_game_dialog(img):
             cet.log("[RETURN-HOME] Phát hiện hộp thoại 'Reload game' -> Bấm nạp lại game...")
             cet.tap(1038, 970, sleep_sec=6.0)
+            continue
+        if cvg.is_cloud_return_home_screen(img):
+            cet.log(f"[RETURN-HOME] Lần #{attempt+1}: Màn hình mây 'Unable to attack Village!' -> Bấm Return Home góc trái (122, 955)...")
+            cet.tap(122, 955, sleep_sec=2.5)
             continue
         if cvg.is_return_home_visible(img):
             cet.log(f"[RETURN-HOME] Lần #{attempt+1}: Phát hiện màn hình kết quả trận -> Bấm Return Home (1111, 925)...")

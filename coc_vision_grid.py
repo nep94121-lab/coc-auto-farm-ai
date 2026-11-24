@@ -322,28 +322,43 @@ def is_reload_game_dialog(img):
     return int(blue_px) > 800
 
 
+def is_cloud_return_home_screen(img):
+    """Nhận diện màn hình mây trắng 'Unable to attack Village!' có nút Villager 'Return Home' ở góc dưới trái (122, 955)."""
+    if img is None or img.shape[0] < 1060 or img.shape[1] < 2000:
+        return False
+    sky = img[80:300, 400:1800]
+    if float(sky.mean()) < 210.0 or float(sky.std()) > 35.0:
+        return False
+    # Hộp nút Return Home (x=25..220, y=860..1055) nổi rõ trên nền mây trắng nhờ ảnh Villager & viền tối
+    btn_box = img[860:1055, 25:220]
+    dark_or_skin = np.sum((btn_box[:, :, 0] < 170) | (btn_box[:, :, 2] > btn_box[:, :, 0] + 20))
+    return float(btn_box.std()) > 35.0 and int(dark_or_skin) > 4000
+
+
 def is_return_home_visible(img):
     """Kiểm tra nút Return Home màu xanh lá giữa đáy màn hình tổng kết trận (hỗ trợ cả Victory và Defeat)."""
     if img is None:
         return False
-    if is_battle_button_visible(img) or is_in_battle(img):
+    if is_battle_button_visible(img) or is_in_battle(img) or is_cloud_return_home_screen(img):
         return False
     
-    # 1. Đối sánh mẫu template chính xác tuyệt đối
-    if _RETURN_HOME_TPL is not None:
+    # 1. Đối sánh mẫu template chính xác tuyệt đối (yêu cầu vùng có tương phản & sắc xanh lá, tránh match ảo trên mây trắng)
+    btn = img[850:980, 960:1260]
+    green_px = int(np.sum((btn[:, :, 1] > 110) & (btn[:, :, 1] > btn[:, :, 2] + 15) & (btn[:, :, 1] > btn[:, :, 0] + 15)))
+    if _RETURN_HOME_TPL is not None and green_px > 800:
         try:
             region = img[780:990, 940:1280]
             if region.shape[0] >= _RETURN_HOME_TPL.shape[0] and region.shape[1] >= _RETURN_HOME_TPL.shape[1]:
                 region_gray = cv2.cvtColor(region, cv2.COLOR_BGR2GRAY)
-                res = cv2.matchTemplate(region_gray, _RETURN_HOME_TPL, cv2.TM_CCOEFF_NORMED)
-                _, max_val, _, _ = cv2.minMaxLoc(res)
-                if max_val >= 0.72:
-                    return True
+                if float(region_gray.std()) > 22.0:
+                    res = cv2.matchTemplate(region_gray, _RETURN_HOME_TPL, cv2.TM_CCOEFF_NORMED)
+                    _, max_val, _, _ = cv2.minMaxLoc(res)
+                    if max_val >= 0.72:
+                        return True
         except Exception:
             pass
 
     # 2. Dự phòng nhận diện dải màu xanh lá và chữ trắng (nút Return Home thực tế nằm ở y=880..979)
-    btn = img[850:980, 960:1260]
     b, g, r = btn[:, :, 0], btn[:, :, 1], btn[:, :, 2]
     green = np.sum((g > 110) & (g > r + 15) & (g > b + 15))
     white = np.sum((r > 190) & (g > 190) & (b > 190))

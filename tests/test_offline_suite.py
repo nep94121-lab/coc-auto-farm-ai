@@ -350,3 +350,12 @@ def test_reconnect_adb_relaunches_bs5_when_emulator_missing(monkeypatch):
     assert bs5_started["flag"] is True
     assert any(c[:3] == ["schtasks", "/run", "/tn"] and c[3] == "BS5Launch" for c in calls)
 
+
+def test_cloud_unable_to_attack_screen_detection():
+    # Màn hình mây trắng + hộp Return Home góc dưới trái
+    cloud = np.full((1080, 2220, 3), 245, dtype=np.uint8)
+    cloud[865:1050, 30:215] = (140, 175, 195)
+    cloud[885:980, 65:175] = (60, 100, 170)  # khuôn mặt/tóc Villager tương phản cao
+    assert cvg.is_cloud_return_home_screen(cloud) is True
+    assert cvg.is_return_home_visible(cloud) is False
+
