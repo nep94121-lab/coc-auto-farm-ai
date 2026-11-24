@@ -260,3 +260,30 @@ def test_calibrated_coords_and_triple_modal_helpers(monkeypatch):
     res_bad = umt.verify_modal_title_and_confirm(wrong_tmpl, settle_sec=0)
     assert res_bad["ok"] is False
 
+
+def test_continuous_farm_no_stop_ignores_full_storages(monkeypatch):
+    import json
+    import tempfile
+    import loop_cay_tai_nguyen_doc_lap as lct
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        status_path = os.path.join(tmpdir, "loop_farm_status.json")
+        monkeypatch.setattr(lct, "STATUS_JSON", status_path)
+        monkeypatch.setattr(lct, "confirm_home_threshold_reached", lambda g, e, de, g_th, de_th: (True, g, e, de))
+
+        # Có điểm dừng (mặc định) -> dừng khi đạt 24.5M / 24.5M / 320k
+        d_stop = lct.handle_home_resource_decision(
+            24_500_000, 24_500_000, 320_000, cycle=1, phase_label="TEST", auto_upgrade_walls=False, no_stop=False
+        )
+        assert d_stop == "STOP_FARM_ONLY"
+
+        # Chế độ liên tục (--no-stop) -> bỏ qua điểm dừng dù kho đầy tràn
+        d_cont = lct.handle_home_resource_decision(
+            24_500_000, 24_500_000, 320_000, cycle=2, phase_label="TEST", auto_upgrade_walls=False, no_stop=True
+        )
+        assert d_cont == "CONTINUE_FARM"
+        with open(status_path, "r", encoding="utf-8") as f:
+            st = json.load(f)
+        assert st["phase"] == "farming_continuous"
+        assert st["no_stop"] is True
+

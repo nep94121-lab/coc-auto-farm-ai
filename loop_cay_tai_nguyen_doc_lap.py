@@ -198,11 +198,13 @@ def confirm_home_threshold_reached(
     )
 
 
-def handle_home_resource_decision(gold, elixir, dark_elixir, cycle, phase_label, auto_upgrade_walls=True):
+def handle_home_resource_decision(gold, elixir, dark_elixir, cycle, phase_label, auto_upgrade_walls=True, no_stop=False):
     """
     Đọc quyết định dựa trên cả 3 tài nguyên nhà và cấu hình ngưỡng động:
     - Chưa đủ CẢ 3: cày tiếp.
-    - Đạt đủ CẢ 3: dừng cày; nếu bật auto_upgrade_walls thì gọi Con Nâng Tường nâng xuống ngưỡng wall_return_to_farm rồi quay lại cày.
+    - Đạt đủ CẢ 3:
+      + Nếu no_stop=True và auto_upgrade_walls=False: bỏ qua điểm dừng, cày liên tục.
+      + Ngược lại: dừng cày; nếu bật auto_upgrade_walls thì gọi Con Nâng Tường nâng xuống ngưỡng wall_return_to_farm rồi quay lại cày.
     """
     g_th, e_th, de_th, wall_th = load_dynamic_thresholds()
     de_msg = f", DE >= {de_th:,}" if de_th > 0 else " (Đã tắt điều kiện Dầu đen)"
@@ -234,6 +236,20 @@ def handle_home_resource_decision(gold, elixir, dark_elixir, cycle, phase_label,
         f"🚨 [QUYẾT ĐỊNH] Kho đạt đủ {reached_str} (Vàng = {gold:,} | Dầu tím = {elixir:,} | Dầu đen = {dark_elixir:,})!"
     )
     if not auto_upgrade_walls:
+        if no_stop:
+            cet.log("♾️ [CHẾ ĐỘ LIÊN TỤC] Đã bật --no-stop -> Không dừng khi đầy kho, tiếp tục cày!")
+            write_farm_status({
+                "phase": "farming_continuous",
+                "cycle": cycle,
+                "home_gold": gold,
+                "home_elixir": elixir,
+                "home_dark_elixir": dark_elixir,
+                "stop_threshold": g_th,
+                "stop_elixir_threshold": e_th,
+                "stop_dark_elixir_threshold": de_th,
+                "no_stop": True,
+            })
+            return "CONTINUE_FARM"
         cet.log("🛑 Đã dừng vòng lặp cày (chế độ chỉ cày, đạt đủ 3 ngưỡng).")
         write_farm_status({
             "phase": "stopped_resource_target_reached",
@@ -278,12 +294,12 @@ def handle_home_resource_decision(gold, elixir, dark_elixir, cycle, phase_label,
     return "UPGRADED_RESUME_FARM"
 
 
-def _check_home_and_maybe_upgrade(cycle, phase_label, auto_upgrade_walls, img_home=None):
+def _check_home_and_maybe_upgrade(cycle, phase_label, auto_upgrade_walls, img_home=None, no_stop=False):
     """Kiểm tra kho 3 tài nguyên ở Làng chính; trả về (should_stop, gold, elixir, dark_elixir)."""
     img = img_home if img_home is not None else ensure_at_home()
     h_gold, h_elix, h_de = inspect_home_resources(img)
     decision = handle_home_resource_decision(
-        h_gold, h_elix, h_de, cycle, phase_label, auto_upgrade_walls=auto_upgrade_walls
+        h_gold, h_elix, h_de, cycle, phase_label, auto_upgrade_walls=auto_upgrade_walls, no_stop=no_stop
     )
     if decision == "STOP_FARM_ONLY":
         return True, h_gold, h_elix, h_de
@@ -298,16 +314,19 @@ def _check_home_and_maybe_upgrade(cycle, phase_label, auto_upgrade_walls, img_ho
     return False, h_gold, h_elix, h_de
 
 
-def run_pure_farm_loop(auto_upgrade_walls=True):
+def run_pure_farm_loop(auto_upgrade_walls=True, no_stop=False):
     cet.reset_live_session_log()
     g_th, e_th, de_th, wall_th = load_dynamic_thresholds()
     cet.log("==================================================")
     cet.log("🚀 BẮT ĐẦU VÒNG LẶP CÀY TÀI NGUYÊN KHÉP KÍN (VISION + AUTO HANDOFF)")
     cet.log("   - Đánh trận: Vàng >= 1,000,000 VÀ Dầu >= 1,000,000")
-    cet.log(
-        f"   - Dừng khi ĐỒNG THỜI: Vàng >= {g_th:,} VÀ Dầu tím >= {e_th:,} "
-        f"VÀ Dầu đen >= {de_th:,}"
-    )
+    if no_stop and not auto_upgrade_walls:
+        cet.log("   - Chế độ: CHẠY LIÊN TỤC KHÔNG ĐIỂM DỪNG (--no-stop)")
+    else:
+        cet.log(
+            f"   - Dừng khi ĐỒNG THỜI: Vàng >= {g_th:,} VÀ Dầu tím >= {e_th:,} "
+            f"VÀ Dầu đen >= {de_th:,}"
+        )
     if auto_upgrade_walls:
         cet.log(f"   - Con Nâng Tường hạ kho xuống <= {wall_th:,} rồi gọi lại Con Loop Cày")
     cet.log("==================================================")
@@ -339,7 +358,7 @@ def run_pure_farm_loop(auto_upgrade_walls=True):
             continue
 
         should_stop, h_gold, h_elix, h_de = _check_home_and_maybe_upgrade(
-            cycle, "TRƯỚC TRẬN", auto_upgrade_walls, img_home=img_home
+            cycle, "TRƯỚC TRẬN", auto_upgrade_walls, img_home=img_home, no_stop=no_stop
         )
         if should_stop:
             break
@@ -373,7 +392,7 @@ def run_pure_farm_loop(auto_upgrade_walls=True):
         # Về Làng chính an toàn, chờ HUD ổn định rồi bật Vision đọc tài nguyên còn lại ở nhà
         time.sleep(2.0)
         should_stop_after, _, _, _ = _check_home_and_maybe_upgrade(
-            cycle, f"SAU TRẬN #{cycle}", auto_upgrade_walls
+            cycle, f"SAU TRẬN #{cycle}", auto_upgrade_walls, no_stop=no_stop
         )
         if should_stop_after:
             break
@@ -384,8 +403,9 @@ def run_pure_farm_loop(auto_upgrade_walls=True):
 if __name__ == "__main__":
     import traceback
     no_wall = "--no-wall" in sys.argv
+    no_stop = "--no-stop" in sys.argv
     try:
-        run_pure_farm_loop(auto_upgrade_walls=not no_wall)
+        run_pure_farm_loop(auto_upgrade_walls=not no_wall, no_stop=no_stop)
     except Exception:
         tb = traceback.format_exc()
         cet.log(f"🚨 [FATAL-CRASH] Vòng lặp gặp lỗi nghiêm trọng:\n{tb}")
