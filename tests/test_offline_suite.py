@@ -359,3 +359,21 @@ def test_cloud_unable_to_attack_screen_detection():
     assert cvg.is_cloud_return_home_screen(cloud) is True
     assert cvg.is_return_home_visible(cloud) is False
 
+
+def test_enemy_loot_2x_yellow_cake_text():
+    # Mô phỏng font vàng sáng của sự kiện Loot Available 2x (BGR ~ [99, 248, 248])
+    crop = np.full((40, 270, 3), (40, 90, 45), dtype=np.uint8)
+    cur_x = 12
+    for idx, ch in enumerate("1647718"):
+        tpl = cvg.DIGIT_TPLS[ch]
+        w_d = 10 if ch == "1" else 18
+        h_d = 22
+        patch = cv2.resize((tpl > 0.4).astype(np.uint8) * 255, (w_d, h_d), interpolation=cv2.INTER_NEAREST)
+        crop[9 : 9 + h_d + 2, cur_x - 1 : cur_x + w_d + 1] = (15, 15, 15)
+        ys, xs = np.where(patch > 0)
+        crop[10 + ys, cur_x + xs] = (99, 248, 248)
+        cur_x += w_d + (12 if idx in (0, 3) else 3)
+    # Đặt khối bánh trắng giả lập ngay bên phải (>26px) để đảm bảo không đọc nhầm số 2x
+    crop[15:35, cur_x + 15 : cur_x + 50] = (230, 230, 240)
+    assert cvg.read_coc_number(crop) == 1647718
+

@@ -85,12 +85,26 @@ def read_coc_number(crop):
     b, g_ch, r = crop[:, :, 0], crop[:, :, 1], crop[:, :, 2]
     kwargs = dict(min_h=15, max_h=27, min_w=5, max_w=26, min_area=60, max_y_jitter=4, max_x_gap=20, left_align=True)
 
-    # 1. Ưu tiên mặt nạ chữ trắng tinh (Available Loot luôn là chữ trắng sáng viền đen)
-    for thresh in (225, 200):
-        mask_rgb = ((r > thresh) & (g_ch > thresh) & (b > thresh)).astype(np.uint8) * 255
-        res = _extract_digits_from_mask(mask_rgb, **kwargs)
-        if res > 0:
-            return res
+    # 1. Ưu tiên mặt nạ chữ trắng tinh (Available Loot thường là chữ trắng sáng viền đen)
+    mask_white_hi = ((r > 225) & (g_ch > 225) & (b > 225)).astype(np.uint8) * 255
+    res_white = _extract_digits_from_mask(mask_white_hi, **kwargs)
+    if res_white >= 100:
+        return res_white
+
+    # 1b. Chữ vàng sáng khi kích hoạt Clan Castle Cake (Loot Available 2x: BGR ~ [99, 248, 248])
+    for r_th, g_th in ((210, 205), (190, 185)):
+        mask_yellow = ((r > r_th) & (g_ch > g_th) & (b < 165)).astype(np.uint8) * 255
+        res_yellow = _extract_digits_from_mask(mask_yellow, **kwargs)
+        if res_yellow >= 100 or (res_yellow > 0 and res_white == 0):
+            return res_yellow
+
+    if res_white > 0:
+        return res_white
+
+    mask_white_lo = ((r > 200) & (g_ch > 200) & (b > 200)).astype(np.uint8) * 255
+    res = _extract_digits_from_mask(mask_white_lo, **kwargs)
+    if res > 0:
+        return res
 
     # 2. Dự phòng Otsu (chặt chiều cao/khoảng cách)
     gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
